@@ -1,0 +1,93 @@
+/* JotDrop board for Joplin. Paper-and-ink house style and card colours from JotDrop cloud/web/style.css. */
+@font-face { font-family: "Instrument Sans"; font-weight: 400 700; font-display: swap; src: url("fonts/instrument-sans.woff2") format("woff2"); }
+@font-face { font-family: "Bricolage Grotesque"; font-weight: 200 800; font-display: swap; src: url("fonts/bricolage-grotesque.woff2") format("woff2"); }
+@font-face { font-family: "Caveat"; font-weight: 600; font-display: swap; src: url("fonts/caveat.woff2") format("woff2"); }
+
+:root { color-scheme: light dark; --page: light-dark(#fbf8f1, #0e1626); --surface: light-dark(#fff, #16213a); --ink: light-dark(#14213d, #fbf8f1); --muted: light-dark(#56607a, #b7bfd0); --line: light-dark(#e2d9c3, #2b3a5c); --accent: light-dark(#315fb4, #f4c458); --on-accent: light-dark(#fff, #14213d); --note: light-dark(#fff, #16213a); --amber: #f4c458; --edge: light-dark(#14213d, #d3d9e6); --hand: light-dark(#8a5a00, #f4c458); --heading: "Bricolage Grotesque", "Instrument Sans", -apple-system, "Segoe UI", sans-serif; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+html, body { margin: 0; background: var(--page); color: var(--ink); font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.45; }
+#jotdrop-root { padding: 14px 18px 48px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.jd-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 10px; }
+.jd-brand { display: flex; align-items: baseline; gap: 12px; }
+.jd-word { font-family: var(--heading); font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; }
+.jd-count { margin: 0; font-family: "Caveat", cursive; font-weight: 600; font-size: 1.3rem; color: var(--hand); transform: rotate(-2deg); }
+.jd-filters { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 320px; justify-content: flex-end; }
+.jd-search, .jd-folder { min-width: 0; padding: 7px 12px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); }
+.jd-search { flex: 1 1 200px; max-width: 360px; }
+.jd-folder { flex: 0 1 220px; }
+
+.jd-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.jd-chip { padding: 3px 11px; border: 1.5px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; font-size: .85rem; }
+.jd-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+
+.jd-compose { max-width: 600px; margin: 0 auto 22px; padding: 8px 14px; border: 1.5px solid var(--edge); border-radius: 10px 10px 18px 10px; background: var(--surface); box-shadow: 4px 4px 0 var(--amber); }
+.jd-compose input, .jd-compose textarea { display: block; width: 100%; box-sizing: border-box; border: 0; background: transparent; padding: 6px 0; resize: vertical; outline: none; }
+.jd-c-title { font-family: var(--heading); font-weight: 700; font-size: 1.05rem; }
+.jd-compose:not(.is-open) .jd-c-title, .jd-compose:not(.is-open) .jd-c-bar { display: none; }
+.jd-c-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 4px; }
+.jd-c-where { color: var(--muted); font-size: .8rem; }
+.jd-c-save { padding: 5px 14px; border: 1.5px solid var(--edge); border-radius: 8px; background: transparent; font-weight: 600; cursor: pointer; }
+
+.jd-section { margin: 6px 0 8px 4px; color: var(--muted); font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.jd-cols { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.jd-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.jd-empty { color: var(--muted); text-align: center; margin: 40px 0; }
+
+.note-card { position: relative; isolation: isolate; padding: 14px 15px 10px; border-radius: 10px 10px 22px 10px; cursor: pointer; overflow-wrap: anywhere; }
+.card-paper { position: absolute; inset: 0; z-index: -1; border: 1px solid var(--line); border-radius: inherit; background: var(--note); rotate: var(--tilt, 0deg); transition: translate .15s ease, box-shadow .15s ease; }
+.card-paper::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 16px; height: 16px; border-top-left-radius: 5px; background: linear-gradient(to top left, var(--page) 50%, color-mix(in oklab, var(--note) 78%, var(--ink)) 50%); }
+.note-card:is(:hover, :focus-visible) .card-paper { translate: -2px -2px; box-shadow: 5px 5px 0 var(--amber); }
+.card-tape { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.note-card.is-pinned .card-tape::before { content: ""; position: absolute; top: -9px; left: 50%; width: 72px; height: 18px; translate: -50% 0; rotate: -4deg; background: color-mix(in srgb, var(--amber) 62%, transparent); }
+:is(.note-card, .swatch).note-red { --note: light-dark(#fbe5e4, #432d30); }
+:is(.note-card, .swatch).note-orange { --note: light-dark(#fcebd9, #433526); }
+:is(.note-card, .swatch).note-yellow { --note: light-dark(#fff4ca, #403b25); }
+:is(.note-card, .swatch).note-green { --note: light-dark(#fce0bd, #584320); }
+:is(.note-card, .swatch).note-teal { --note: light-dark(#c6d3e0, #334758); }
+:is(.note-card, .swatch).note-blue { --note: light-dark(#e1edf9, #29384a); }
+:is(.note-card, .swatch).note-purple { --note: light-dark(#ece4f7, #362f45); }
+:is(.note-card, .swatch).note-pink { --note: light-dark(#f7e3ee, #422d3c); }
+:is(.note-card, .swatch).note-brown { --note: light-dark(#eee4da, #3c352e); }
+:is(.note-card, .swatch).note-gray { --note: light-dark(#e8ebef, #33383f); }
+
+.card-cover { display: block; width: calc(100% + 30px); max-height: 220px; margin: -14px -15px 10px; object-fit: cover; border-radius: 10px 10px 0 0; }
+.note-card h3 { margin: 0 0 6px; padding-right: 26px; font-family: var(--heading); font-size: 1.04rem; font-weight: 700; letter-spacing: -.01em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.note-preview { max-height: 330px; overflow: hidden; font-size: .93rem; }
+.jd-line { white-space: pre-wrap; min-height: 1.2em; }
+.jd-task { display: flex; align-items: flex-start; gap: 4px; }
+.jd-check { flex: none; width: 26px; height: 26px; margin: -3px 0 -3px -5px; padding: 0; border: 0; background: transparent; font-size: 1.15rem; line-height: 1; cursor: pointer; }
+.jd-task.is-done span { text-decoration: line-through; color: var(--muted); }
+.jd-muted { margin: 0; color: var(--muted); font-style: italic; }
+.card-reminder { display: inline-block; margin: 8px 0 0; padding: 1px 9px; border: 1px solid var(--line); border-radius: 999px; font-size: .75rem; font-weight: 500; }
+.card-reminder.is-overdue { border-style: dashed; border-color: currentColor; font-weight: 700; }
+.jd-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.jd-tagchip, .link-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; padding: 1px 8px; border-radius: 999px; font-size: .75rem; background: color-mix(in srgb, currentColor 10%, transparent); color: inherit; text-decoration: none; }
+.link-chip svg { width: 13px; height: 13px; fill: currentColor; flex: none; }
+.link-chip:hover { outline: 1px solid var(--accent); }
+
+.card-pin, .jd-act { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.card-pin svg, .jd-act svg { width: 18px; height: 18px; fill: currentColor; }
+.card-pin { position: absolute; top: 6px; right: 6px; z-index: 2; opacity: 0; transition: opacity .15s ease; }
+.card-actions { display: flex; gap: 2px; margin: 6px -6px -4px; opacity: 0; transition: opacity .15s ease; }
+.note-card:is(:hover, :focus-within) :is(.card-pin, .card-actions), .card-pin[aria-pressed="true"] { opacity: 1; }
+.card-pin:hover, .jd-act:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+@media (hover: none) { .card-pin, .card-actions { opacity: 1; } }
+
+.card-menu { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 180px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); }
+.card-menu button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 6px; padding: 7px 10px; text-align: left; background: transparent; cursor: pointer; }
+.card-menu button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.card-menu .swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: var(--note); flex: none; }
+.card-menu .menu-check { margin-left: auto; font-weight: 700; }
+
+.jd-toast { position: fixed; left: 50%; bottom: 18px; z-index: 30; max-width: min(90vw, 460px); padding: 9px 16px; translate: -50% 20px; border-radius: 10px; background: var(--ink); color: var(--page); font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s ease, translate .2s ease; }
+.jd-toast.is-shown { opacity: 1; translate: -50% 0; }
+@media (prefers-reduced-motion: reduce) { .card-paper, .jd-toast, .card-pin, .card-actions { transition: none; } }
+/* On a phone a card shows a Keep-sized peek of the note, not the whole note. */
+:root[data-platform="mobile"] body { font-size: 14px; }
+:root[data-platform="mobile"] .note-preview { max-height: 190px; }
+:root[data-platform="mobile"] .card-cover { max-height: 150px; }
+@media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-search { max-width: none; } }

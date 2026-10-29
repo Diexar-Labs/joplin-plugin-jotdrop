@@ -1,0 +1,26 @@
+{
+  "name": "joplin-plugin-jotdrop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "JotDrop for Joplin: all your notes as Google Keep-style cards.",
+  "license": "MIT",
+  "author": "Diexar Labs",
+  "homepage": "https://jotdrop.net/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Diexar-Labs/joplin-plugin-jotdrop.git"
+  },
+  "keywords": ["joplin-plugin"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check:shared": "node scripts/check-shared.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "tar": "^7.5.2",
+    "typescript": "^5.9.3"
+  }
+}
