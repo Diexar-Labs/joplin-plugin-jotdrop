@@ -1,6 +1,8 @@
 // Builds dist/ (what Joplin loads) and publish/net.jotdrop.joplin.jpl (a tar of dist/, like generator-joplin makes).
 import { build } from 'esbuild';
 import { create } from 'tar';
+import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,4 +48,12 @@ const manifest = JSON.parse(readFileSync(join(root, 'src/manifest.json'), 'utf8'
 const jpl = join(publish, `${manifest.id}.jpl`);
 rmSync(jpl, { force: true });
 await create({ strict: true, portable: true, file: jpl, cwd: dist }, readdirSync(dist));
+
+// Joplin's plugin repository reads this file next to the .jpl (same fields as generator-joplin writes).
+const git = (args) => execSync(`git ${args}`, { cwd: root, encoding: 'utf8' }).trim();
+writeFileSync(join(publish, `${manifest.id}.json`), JSON.stringify({
+	...manifest,
+	_publish_hash: `sha256:${createHash('sha256').update(readFileSync(jpl)).digest('hex')}`,
+	_publish_commit: `${git('rev-parse --abbrev-ref HEAD')}:${git('rev-parse HEAD')}`,
+}, null, '	'));
 console.log(`Built ${jpl}`);

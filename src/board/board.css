@@ -36,10 +36,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-cols { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
 .jd-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .jd-empty { color: var(--muted); text-align: center; margin: 40px 0; }
+.jd-more { height: 1px; }
+.jd-archive { flex: none; align-self: center; }
 
 .note-card { position: relative; isolation: isolate; padding: 14px 15px 10px; border-radius: 10px 10px 22px 10px; cursor: pointer; overflow-wrap: anywhere; }
 .card-paper { position: absolute; inset: 0; z-index: -1; border: 1px solid var(--line); border-radius: inherit; background: var(--note); rotate: var(--tilt, 0deg); transition: translate .15s ease, box-shadow .15s ease; }
 .card-paper::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 16px; height: 16px; border-top-left-radius: 5px; background: linear-gradient(to top left, var(--page) 50%, color-mix(in oklab, var(--note) 78%, var(--ink)) 50%); }
+/* The dragged card fades and a bar shows where it lands; nothing shifts while dragging. */
+.is-card-dragging, .is-card-dragging * { cursor: grabbing !important; user-select: none; }
+.note-card.is-dragging { opacity: .45; }
+.note-card.drop-before { box-shadow: 0 -6px 0 var(--accent); }
+.note-card.drop-after { box-shadow: 0 6px 0 var(--accent); }
+@media (hover: none) { .note-card { -webkit-touch-callout: none; user-select: none; } }
 .note-card:is(:hover, :focus-visible) .card-paper { translate: -2px -2px; box-shadow: 5px 5px 0 var(--amber); }
 .card-tape { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .note-card.is-pinned .card-tape::before { content: ""; position: absolute; top: -9px; left: 50%; width: 72px; height: 18px; translate: -50% 0; rotate: -4deg; background: color-mix(in srgb, var(--amber) 62%, transparent); }
@@ -82,6 +90,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card-menu button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
 .card-menu .swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: var(--note); flex: none; }
 .card-menu .menu-check { margin-left: auto; font-weight: 700; }
+.card-menu .menu-hint { margin-left: auto; padding-left: 14px; color: var(--muted); font-size: .8rem; }
+.card-menu .menu-pick { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; padding: 7px 10px 2px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+.menu-time { padding: 5px 6px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: .9rem; }
+.card-menu .menu-set { justify-content: center; font-weight: 600; }
 
 .jd-toast { position: fixed; left: 50%; bottom: 18px; z-index: 30; max-width: min(90vw, 460px); padding: 9px 16px; translate: -50% 20px; border-radius: 10px; background: var(--ink); color: var(--page); font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s ease, translate .2s ease; }
 .jd-toast.is-shown { opacity: 1; translate: -50% 0; }

@@ -1,6 +1,6 @@
 {
   "name": "joplin-plugin-jotdrop",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "JotDrop for Joplin: all your notes as Google Keep-style cards.",
@@ -12,11 +12,13 @@
     "url": "https://github.com/Diexar-Labs/joplin-plugin-jotdrop.git"
   },
   "keywords": ["joplin-plugin"],
+  "files": ["publish"],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
     "test": "node --test",
-    "check:shared": "node scripts/check-shared.mjs"
+    "check:shared": "node scripts/check-shared.mjs",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",

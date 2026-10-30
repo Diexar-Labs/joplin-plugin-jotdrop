@@ -1,16 +1,19 @@
 import joplin from 'api';
 import { MenuItemLocation, ModelType, SettingItemType, ToolbarButtonLocation } from 'api/types';
 
-// JotDrop for Joplin, prototype. One special note is the board: when it is open, the JotDrop
-// editor view shows every other note as a Keep-style card. Colour and pin live in the note's
-// user_data (synced by Joplin, never written into the note text).
+// JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
+// shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
+// the note's user_data (synced by Joplin, never written into the note text).
 
 const PLUGIN_ID = 'net.jotdrop.joplin';
 const VIEW_ID = 'jotdropBoard';
 const BOARD_FENCE = '```jotdrop-board';
 const BOARD_BODY = `This note is your JotDrop board. With the JotDrop plugin it shows all your notes as cards.\n\n${BOARD_FENCE}\nversion: 1\n\`\`\`\n`;
 const COLORS = new Set(['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray']);
-const NOTE_FIELDS = ['id', 'parent_id', 'title', 'body', 'is_todo', 'todo_completed', 'todo_due', 'user_created_time', 'user_updated_time', 'user_data'];
+const BOARD_FOLDER = 'JotDrop';
+// Everything a card needs except the text: the board sorts and filters on this, and fetches the
+// text only for the cards it actually shows, so thousands of notes stay light.
+const META_FIELDS = ['id', 'parent_id', 'title', 'is_todo', 'todo_completed', 'todo_due', 'user_created_time', 'updated_time', 'user_data'];
 const PREVIEW_CHARS = 6000;
 
 const views = new Set<string>();
@@ -63,23 +66,28 @@ async function firstImage(body: string): Promise<{ id: string; url: string } | n
 	return null;
 }
 
-async function toCard(note: any, tagsByNote: Map<string, string[]>) {
-	const body: string = note.body || '';
+function toMeta(note: any, tags: string[]) {
 	const meta = readUserData(note.user_data);
 	return {
 		id: note.id,
 		folderId: note.parent_id,
 		title: note.title || '',
-		body: body.slice(0, PREVIEW_CHARS),
 		isTodo: !!note.is_todo,
 		done: !!note.todo_completed,
 		due: note.todo_due || 0,
-		created: note.user_created_time,
+		updated: note.updated_time,
+		rank: typeof meta.rank === 'number' ? meta.rank : note.user_created_time,
 		pinned: meta.pinned === true,
+		archived: meta.archived === true,
 		color: COLORS.has(String(meta.color)) ? String(meta.color) : 'default',
-		tags: tagsByNote.get(note.id) || [],
-		image: await firstImage(body),
+		tags,
 	};
+}
+
+async function preview(id: string) {
+	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time'] });
+	const body: string = note.body || '';
+	return { id, updated: note.updated_time, body: body.slice(0, PREVIEW_CHARS), image: await firstImage(body) };
 }
 
 async function tagMap(): Promise<Map<string, string[]>> {
@@ -93,24 +101,47 @@ async function tagMap(): Promise<Map<string, string[]>> {
 	return map;
 }
 
-async function loadNote(id: string) {
-	return joplin.data.get(['notes', id], { fields: NOTE_FIELDS });
-}
-
 async function cardFor(id: string) {
 	const tags = (await allPages(['notes', id, 'tags'], { fields: ['title'] })).map((tag) => tag.title);
-	return toCard(await loadNote(id), new Map([[id, tags]]));
+	const [note, shown] = await Promise.all([joplin.data.get(['notes', id], { fields: META_FIELDS }), preview(id)]);
+	return { ...toMeta(note, tags), preview: shown };
 }
 
 async function loadBoard() {
+	const boardId = await findBoardNoteId();
 	const [notes, folders, tags] = await Promise.all([
-		allPages(['notes'], { fields: NOTE_FIELDS, order_by: 'user_created_time', order_dir: 'DESC' }),
+		allPages(['notes'], { fields: META_FIELDS }),
 		allPages(['folders'], { fields: ['id', 'title', 'parent_id'] }),
 		tagMap(),
 	]);
-	const cards: Awaited<ReturnType<typeof toCard>>[] = [];
-	for (const note of notes) if (!isBoardBody(note.body)) cards.push(await toCard(note, tags));
+	const cards = notes
+		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
+		.map((note) => toMeta(note, tags.get(note.id) || []));
 	return { cards, folders, platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en') };
+}
+
+// Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
+async function searchNotes(text: string) {
+	const words = String(text).replace(/[":*()\-]/g, ' ').split(/\s+/).filter(Boolean);
+	if (!words.length) return [];
+	const found = await allPages(['search'], { query: words.map((word) => `${word}*`).join(' '), type: 'note', fields: ['id'] });
+	return found.map((note) => note.id);
+}
+
+// Joplin raises its alarm only for a to-do, so a reminder on a plain note turns it into one.
+// A flag remembers that, and removing the reminder makes it a plain note again.
+async function setReminder(id: string, due: number) {
+	const note = await joplin.data.get(['notes', id], { fields: ['is_todo', 'user_data'] });
+	if (due > 0) {
+		if (!note.is_todo) await joplin.data.userDataSet(ModelType.Note, id, 'madeTodo', true);
+		await joplin.data.put(['notes', id], null, { is_todo: 1, todo_due: due, todo_completed: 0 });
+	} else if (readUserData(note.user_data).madeTodo === true) {
+		await joplin.data.userDataDelete(ModelType.Note, id, 'madeTodo');
+		await joplin.data.put(['notes', id], null, { is_todo: 0, todo_due: 0, todo_completed: 0 });
+	} else {
+		await joplin.data.put(['notes', id], null, { todo_due: 0 });
+	}
+	return cardFor(id);
 }
 
 // The API has no compare-and-swap, so the body is read again right before the write and the
@@ -162,6 +193,8 @@ async function handleMessage(message: any) {
 async function answer(message: any) {
 	switch (message?.type) {
 	case 'load': return loadBoard();
+	case 'previews': return Promise.all(message.ids.map(preview));
+	case 'search': return searchNotes(message.text);
 	case 'open': await joplin.commands.execute('openNote', message.id); return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
 	case 'toggleTask': return toggleTask(message.id, message.line, !!message.checked);
@@ -169,6 +202,14 @@ async function answer(message: any) {
 		if (message.pinned) await joplin.data.userDataSet(ModelType.Note, message.id, 'pinned', true);
 		else await joplin.data.userDataDelete(ModelType.Note, message.id, 'pinned');
 		return cardFor(message.id);
+	case 'setArchived':
+		if (message.archived) await joplin.data.userDataSet(ModelType.Note, message.id, 'archived', true);
+		else await joplin.data.userDataDelete(ModelType.Note, message.id, 'archived');
+		return cardFor(message.id);
+	case 'setRanks':
+		for (const { id, rank } of message.ranks) await joplin.data.userDataSet(ModelType.Note, id, 'rank', Number(rank));
+		return true;
+	case 'setReminder': return setReminder(message.id, Number(message.due) || 0);
 	case 'setColor':
 		if (COLORS.has(message.color)) await joplin.data.userDataSet(ModelType.Note, message.id, 'color', message.color);
 		else await joplin.data.userDataDelete(ModelType.Note, message.id, 'color');
@@ -224,18 +265,26 @@ async function findBoardNoteId(): Promise<string | null> {
 			// Gone: look again below.
 		}
 	}
-	const found = (await allPages(['notes'], { fields: ['id', 'body'], order_by: 'user_created_time', order_dir: 'ASC' })).find((note) => isBoardBody(note.body));
+	// A board that came in through sync, or a setting that was lost.
+	const found = (await allPages(['search'], { query: '"jotdrop-board"', type: 'note', fields: ['id', 'body'] })).find((note) => isBoardBody(note.body));
 	await joplin.settings.setValue('boardNoteId', found ? found.id : '');
 	return found ? found.id : null;
+}
+
+// The board and quick notes get a notebook of their own instead of whichever one happens to be selected.
+async function boardFolderForNewBoard() {
+	const folders = await allPages(['folders'], { fields: ['id', 'title', 'parent_id'] });
+	const mine = folders.find((folder) => folder.title === BOARD_FOLDER && !folder.parent_id);
+	return mine ? mine.id : (await joplin.data.post(['folders'], null, { title: BOARD_FOLDER })).id;
 }
 
 async function openBoard(create: boolean) {
 	let id = await findBoardNoteId();
 	if (!id) {
 		if (!create) return;
-		const folder = await joplin.workspace.selectedFolder();
-		const note = await joplin.data.post(['notes'], null, { title: 'JotDrop', body: BOARD_BODY, parent_id: folder?.id || await boardFolderId() });
+		const note = await joplin.data.post(['notes'], null, { title: 'JotDrop', body: BOARD_BODY, parent_id: await boardFolderForNewBoard() });
 		id = note.id as string;
+		await joplin.data.userDataSet(ModelType.Note, id, 'board', true);
 		await joplin.settings.setValue('boardNoteId', id);
 	}
 	await joplin.commands.execute('openNote', id);
@@ -284,7 +333,7 @@ joplin.plugins.register({
 		} else {
 			// On mobile a panel is reachable from every screen through the header's puzzle button.
 			const panel = await joplin.views.panels.create('jotdropLauncher');
-			await joplin.views.panels.setHtml(panel, '<div class="jd-launch"><p>Your notes as cards.</p><button id="jd-open" type="button">Open JotDrop board</button></div>');
+			await joplin.views.panels.setHtml(panel, '<div class="jd-launch"><div class="jd-launch-card"><h1>JotDrop</h1><p>All your notes as cards.</p><button id="jd-open" type="button">Open JotDrop board</button></div></div>');
 			await joplin.views.panels.addScript(panel, './launcher.css');
 			await joplin.views.panels.addScript(panel, './launcher.js');
 			await joplin.views.panels.onMessage(panel, async (message: any) => {
