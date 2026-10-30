@@ -28,6 +28,8 @@ The board only reads and writes your notes through Joplin's own plugin API. Colo
 
 A reminder is the one thing that changes how a note behaves in Joplin: Joplin only has alarms for to-dos, so a plain note becomes a to-do when you set one. Remove the reminder and it is a plain note again.
 
+On Android 13 and newer, allow notifications for Joplin in your phone settings. Joplin only asks for this in its own alarm screen, and a plugin cannot ask for it, so without it a reminder set from the board stays silent.
+
 ## Get started
 
 1. In Joplin, open **Tools > Options > Plugins** (Android: **Configuration > Plugins**, then **Enable plugin support**).

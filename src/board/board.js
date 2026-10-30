@@ -11,7 +11,7 @@ const STRINGS = {
     changed: 'This checklist changed in the meantime. The board shows the latest version again.', failed: 'That did not work. Please try again.',
     saved: 'Note saved', due: 'Due', overdue: 'Overdue', notes: (n) => (n === 1 ? '1 note' : `${n} notes`),
     archive: 'Archive', unarchive: 'Back to the board', archived: 'Note archived', unarchived: 'Note back on the board', archiveView: 'Archive', archiveEmpty: 'Nothing in the archive.',
-    remind: 'Remind me', laterToday: 'Later today', tomorrow: 'Tomorrow', nextWeek: 'Next week', pickTime: 'Pick a date and time', setReminder: 'Set reminder', removeReminder: 'Remove reminder',
+    remind: 'Remind me', laterToday: 'Later today', tomorrow: 'Tomorrow', nextWeek: 'Next week', pickTime: 'Pick a date and time', setReminder: 'Set reminder', removeReminder: 'Remove reminder', reminderAndroid: 'Allow notifications for Joplin in your phone settings, or this reminder stays silent.',
     colors: ['Default', 'Red', 'Orange', 'Yellow', 'Cream', 'Slate blue', 'Blue', 'Purple', 'Pink', 'Brown', 'Gray'],
   },
   nl: {
@@ -21,7 +21,7 @@ const STRINGS = {
     changed: 'Deze checklist is intussen veranderd. Het bord toont weer de nieuwste versie.', failed: 'Dat lukte niet. Probeer het nog eens.',
     saved: 'Notitie bewaard', due: 'Klaar op', overdue: 'Te laat', notes: (n) => (n === 1 ? '1 notitie' : `${n} notities`),
     archive: 'Archiveren', unarchive: 'Terug op het bord', archived: 'Notitie gearchiveerd', unarchived: 'Notitie staat weer op het bord', archiveView: 'Archief', archiveEmpty: 'Niets in het archief.',
-    remind: 'Herinner me', laterToday: 'Later vandaag', tomorrow: 'Morgen', nextWeek: 'Volgende week', pickTime: 'Kies datum en tijd', setReminder: 'Herinnering zetten', removeReminder: 'Herinnering weghalen',
+    remind: 'Herinner me', laterToday: 'Later vandaag', tomorrow: 'Morgen', nextWeek: 'Volgende week', pickTime: 'Kies datum en tijd', setReminder: 'Herinnering zetten', removeReminder: 'Herinnering weghalen', reminderAndroid: 'Sta meldingen voor Joplin toe in je telefooninstellingen, anders blijft deze herinnering stil.',
     colors: ['Standaard', 'Rood', 'Oranje', 'Geel', 'Crème', 'Leiblauw', 'Blauw', 'Paars', 'Roze', 'Bruin', 'Grijs'],
   },
 };
@@ -509,6 +509,8 @@ function showReminders(anchor, c) {
   menu.append(h('label', { class: 'menu-pick' }, t.pickTime, input),
     h('button', { type: 'button', role: 'menuitem', class: 'menu-set', onclick: () => { const when = new Date(input.value).getTime(); if (when) set(when); } }, t.setReminder));
   if (c.due) menu.append(h('button', { type: 'button', role: 'menuitem', onclick: () => set(0) }, t.removeReminder));
+  // Joplin only asks for this permission in its own alarm screen, and a plugin cannot ask or check it.
+  if (document.documentElement.dataset.platform === 'mobile') menu.append(h('p', { class: 'menu-note', text: t.reminderAndroid }));
   showMenu(menu, anchor);
 }
 

@@ -94,6 +94,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card-menu .menu-pick { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; padding: 7px 10px 2px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
 .menu-time { padding: 5px 6px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: .9rem; }
 .card-menu .menu-set { justify-content: center; font-weight: 600; }
+.menu-note { max-width: 240px; margin: 4px 0 0; padding: 7px 10px 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; line-height: 1.35; }
 
 .jd-toast { position: fixed; left: 50%; bottom: 18px; z-index: 30; max-width: min(90vw, 460px); padding: 9px 16px; translate: -50% 20px; border-radius: 10px; background: var(--ink); color: var(--page); font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s ease, translate .2s ease; }
 .jd-toast.is-shown { opacity: 1; translate: -50% 0; }

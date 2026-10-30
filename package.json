@@ -1,7 +1,6 @@
 {
   "name": "joplin-plugin-jotdrop",
   "version": "1.0.0",
-  "private": true,
   "type": "module",
   "description": "JotDrop for Joplin: all your notes as Google Keep-style cards.",
   "license": "MIT",
