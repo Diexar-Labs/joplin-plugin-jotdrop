@@ -1,5 +1,6 @@
 import joplin from 'api';
 import { MenuItemLocation, ModelType, SettingItemType, ToolbarButtonLocation } from 'api/types';
+import { cloudStatus, openCloud, registerCloudSettings, startCloud } from './cloudInbox';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
 // shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
@@ -66,6 +67,21 @@ async function firstImage(body: string): Promise<{ id: string; url: string } | n
 	return null;
 }
 
+const AUDIO_LINK = /(?<!!)\[[^\]]*\]\(:\/([0-9a-fA-F]{32})[^)]*\)/g;
+
+// The first sound in a note plays on the card; its link is not shown as text as well.
+async function firstAudio(body: string) {
+	for (const match of body.matchAll(AUDIO_LINK)) {
+		try {
+			const resource = await joplin.data.get(['resources', match[1]], { fields: ['mime'] });
+			if (String(resource?.mime).startsWith('audio/')) return { link: match[0], url: fileUrl(await joplin.data.resourcePath(match[1])) };
+		} catch {
+			// A link to a resource that is gone: no player.
+		}
+	}
+	return null;
+}
+
 function toMeta(note: any, tags: string[]) {
 	const meta = readUserData(note.user_data);
 	return {
@@ -87,7 +103,8 @@ function toMeta(note: any, tags: string[]) {
 async function preview(id: string) {
 	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time'] });
 	const body: string = note.body || '';
-	return { id, updated: note.updated_time, body: body.slice(0, PREVIEW_CHARS), image: await firstImage(body) };
+	const audio = await firstAudio(body);
+	return { id, updated: note.updated_time, body: (audio ? body.replace(audio.link, '') : body).slice(0, PREVIEW_CHARS), image: await firstImage(body), audio: audio?.url || null };
 }
 
 async function tagMap(): Promise<Map<string, string[]>> {
@@ -117,7 +134,7 @@ async function loadBoard() {
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
 		.map((note) => toMeta(note, tags.get(note.id) || []));
-	return { cards, folders, platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en') };
+	return { cards, folders, platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
@@ -223,6 +240,7 @@ async function answer(message: any) {
 		return cardFor(note.id);
 	}
 	case 'imageData': return imageData(message.id);
+	case 'cloud': return openCloud(notifyBoards);
 	}
 	return null;
 }
@@ -345,6 +363,10 @@ joplin.plugins.register({
 
 		await joplin.workspace.onSyncComplete(async () => notifyBoards());
 		setInterval(() => { pollChanges().catch(() => { cursor = null; }); }, 3000);
+		if (platform === 'desktop') {
+			await registerCloudSettings();
+			startCloud(boardFolderForNewBoard, notifyBoards);
+		}
 
 		if (await joplin.settings.value('openAtStartup')) {
 			setTimeout(() => { openBoard(false).catch(() => {}); }, 1500);

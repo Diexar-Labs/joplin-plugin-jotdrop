@@ -10,6 +10,7 @@ const STRINGS = {
     noNotes: 'No notes yet. Take your first note above.', noMatch: 'No notes match.', empty: 'Empty note',
     changed: 'This checklist changed in the meantime. The board shows the latest version again.', failed: 'That did not work. Please try again.',
     saved: 'Note saved', due: 'Due', overdue: 'Overdue', notes: (n) => (n === 1 ? '1 note' : `${n} notes`),
+    cloudOff: 'JotDrop Cloud', cloudOn: '✓ Cloud', cloudProblem: '⚠ Cloud', cloudTitle: 'Bring in notes from the JotDrop app',
     archive: 'Archive', unarchive: 'Back to the board', archived: 'Note archived', unarchived: 'Note back on the board', archiveView: 'Archive', archiveEmpty: 'Nothing in the archive.',
     remind: 'Remind me', laterToday: 'Later today', tomorrow: 'Tomorrow', nextWeek: 'Next week', pickTime: 'Pick a date and time', setReminder: 'Set reminder', removeReminder: 'Remove reminder', reminderAndroid: 'Allow notifications for Joplin in your phone settings, or this reminder stays silent.',
     colors: ['Default', 'Red', 'Orange', 'Yellow', 'Cream', 'Slate blue', 'Blue', 'Purple', 'Pink', 'Brown', 'Gray'],
@@ -20,6 +21,7 @@ const STRINGS = {
     noNotes: 'Nog geen notities. Maak hierboven je eerste notitie.', noMatch: 'Geen notities gevonden.', empty: 'Lege notitie',
     changed: 'Deze checklist is intussen veranderd. Het bord toont weer de nieuwste versie.', failed: 'Dat lukte niet. Probeer het nog eens.',
     saved: 'Notitie bewaard', due: 'Klaar op', overdue: 'Te laat', notes: (n) => (n === 1 ? '1 notitie' : `${n} notities`),
+    cloudOff: 'JotDrop Cloud', cloudOn: '✓ Cloud', cloudProblem: '⚠ Cloud', cloudTitle: 'Notities uit de JotDrop-app binnenhalen',
     archive: 'Archiveren', unarchive: 'Terug op het bord', archived: 'Notitie gearchiveerd', unarchived: 'Notitie staat weer op het bord', archiveView: 'Archief', archiveEmpty: 'Niets in het archief.',
     remind: 'Herinner me', laterToday: 'Later vandaag', tomorrow: 'Morgen', nextWeek: 'Volgende week', pickTime: 'Kies datum en tijd', setReminder: 'Herinnering zetten', removeReminder: 'Herinnering weghalen', reminderAndroid: 'Sta meldingen voor Joplin toe in je telefooninstellingen, anders blijft deze herinnering stil.',
     colors: ['Standaard', 'Rood', 'Oranje', 'Geel', 'Crème', 'Leiblauw', 'Blauw', 'Paars', 'Roze', 'Bruin', 'Grijs'],
@@ -129,6 +131,7 @@ async function load() {
     buildShell();
   }
   applyTheme();
+  renderCloudButton(data.cloud);
   // Nothing changed for the board (our own write coming back, a note it does not show): cards stay put.
   const same = JSON.stringify([data.cards, data.folders, data.boardFolder]);
   if (same === lastData) return;
@@ -224,15 +227,23 @@ function buildShell() {
     onchange: (e) => { state.folderId = e.target.value; state.tag = ''; renderAll(true); } });
   const archive = h('button', { type: 'button', class: 'jd-chip jd-archive', 'aria-pressed': 'false',
     onclick: () => { state.archive = !state.archive; state.tag = ''; renderAll(true); } });
+  const cloud = h('button', { type: 'button', class: 'jd-chip jd-cloud', title: t.cloudTitle,
+    onclick: async () => {
+      try {
+        const { message } = await post({ type: 'cloud' });
+        if (message) toast(message);
+      } catch { toast(t.failed); }
+      scheduleReload(0);
+    } });
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
   const more = h('div', { class: 'jd-more', 'aria-hidden': 'true' });
   const toastEl = h('div', { class: 'jd-toast', role: 'status', 'aria-live': 'polite' });
-  els = { search, folder, archive, count, tags, grid, more, toast: toastEl };
+  els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
-    h('div', { class: 'jd-filters' }, search, folder, archive));
+    h('div', { class: 'jd-filters' }, search, folder, archive, cloud));
   document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
@@ -286,6 +297,11 @@ function renderAll(fromTop) {
   renderTags();
   renderArchiveButton();
   renderGrid(fromTop);
+}
+
+function renderCloudButton(cloud) {
+  if (!cloud) return;
+  els.cloud.textContent = !cloud.connected ? t.cloudOff : cloud.total ? `Cloud ${cloud.done}/${cloud.total}` : cloud.problem ? t.cloudProblem : t.cloudOn;
 }
 
 function renderArchiveButton() {
@@ -405,12 +421,13 @@ function cardEl(c) {
   card.style.setProperty('--tilt', tiltFor(c.id));
   if (shownNote.image) card.append(cover(shownNote.image));
   if (c.title) card.append(h('h3', { text: c.title }));
+  if (shownNote.audio) card.append(h('audio', { class: 'card-audio', controls: true, preload: 'metadata', src: shownNote.audio }));
   if (lines.length) {
     card.append(h('div', { class: 'note-preview' }, lines.map((line) => (line.line === undefined
       ? h('div', { class: 'jd-line', text: line.text || ' ' })
       : task(c, line)))));
   }
-  if (!c.title && !lines.length && !shownNote.image) card.append(h('p', { class: 'jd-muted', text: t.empty }));
+  if (!c.title && !lines.length && !shownNote.image && !shownNote.audio) card.append(h('p', { class: 'jd-muted', text: t.empty }));
   if (c.isTodo && c.due) card.append(dueBadge(c));
   const chips = [
     ...c.tags.map((tag) => h('span', { class: 'jd-tagchip', text: `#${tag}` })),
@@ -423,7 +440,7 @@ function cardEl(c) {
       onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
     h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), archiveButton(c)));
   card.addEventListener('click', (e) => {
-    if (swallowClick || e.target.closest('button, a, input, .card-menu')) return;
+    if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     post({ type: 'open', id: c.id }).catch(() => toast(t.failed));
   });
   card.addEventListener('keydown', (e) => {
@@ -578,7 +595,7 @@ function setupDrag() {
 
   els.grid.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.note-card');
-    if (!el || e.button !== 0 || !e.isPrimary || e.target.closest('button, a, input, select, textarea')) return;
+    if (!el || e.button !== 0 || !e.isPrimary || e.target.closest('button, a, input, select, textarea, audio')) return;
     const card = state.cards.find((c) => c.id === el.dataset.id);
     if (!card) return;
     cancelPending();

@@ -8,17 +8,18 @@
 
 The free, open-source **Google Keep style card view for Joplin**, on **Joplin desktop** and **Joplin for Android**.<br/>
 Every note you already have becomes a card you can pin, color, drag and tick off.<br/>
-Nothing to convert. No account. Your notes stay in Joplin.
+Nothing to convert. No account needed. Your notes stay in Joplin.<br/>
+Want to capture on the go? Notes from the **JotDrop app** can land on your board through **JotDrop Cloud**.
 
-[**Get it**](#get-jotdrop-for-joplin) · [**Features**](#features) · [**On your phone**](#on-your-phone) · [**How it works**](#how-it-works) · [**JotDrop app and Cloud**](#the-rest-of-jotdrop-android-app-and-jotdrop-cloud) · [**FAQ**](#faq) · [**jotdrop.net**](https://jotdrop.net/)
+[**Get it**](#get-jotdrop-for-joplin) · [**Features**](#features) · [**On your phone**](#on-your-phone) · [**From the JotDrop app**](#from-the-jotdrop-app-into-joplin) · [**How it works**](#how-it-works) · [**JotDrop app and Cloud**](#the-rest-of-jotdrop-android-app-and-jotdrop-cloud) · [**FAQ**](#faq) · [**jotdrop.net**](https://jotdrop.net/)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-f4c458.svg)](LICENSE) [![Joplin plugin](https://img.shields.io/badge/Joplin-plugin-14213d)](#get-jotdrop-for-joplin) [![npm](https://img.shields.io/npm/v/joplin-plugin-jotdrop?color=14213d&label=npm)](https://www.npmjs.com/package/joplin-plugin-jotdrop) [![Platforms](https://img.shields.io/badge/Desktop%20%2B%20Android-14213d)](#get-jotdrop-for-joplin)
 
 </div>
 
-> ### Free. No account. No extra cloud.
+> ### Free. No account needed. The cloud is your choice.
 >
-> JotDrop for Joplin costs nothing and needs no sign-up. It adds a board to the Joplin you already use and it makes no network requests of its own. Your notes keep using Joplin's own sync, whichever sync target you chose.
+> JotDrop for Joplin costs nothing and needs no sign-up. It adds a board to the Joplin you already use, and your notes keep using Joplin's own sync, whichever sync target you chose. It only talks to the internet if you connect JotDrop Cloud yourself, to bring in notes from the JotDrop app.
 
 ---
 
@@ -136,6 +137,36 @@ Joplin for Android's own note list only shows titles. With JotDrop you get the w
 
 **Allow notifications.** On Android 13 and newer, allow notifications for Joplin in your phone settings. Joplin only asks for this in its own alarm screen and a plugin cannot ask for it, so without it a reminder set from the board stays silent.
 
+## From the JotDrop app into Joplin
+
+The [JotDrop Android app](#the-jotdrop-android-app) is made for catching things on the go: share a link from any app, dictate, record a voice memo, turn a photo into text. Connect JotDrop Cloud, and all of that shows up on your Joplin board as ordinary notes.
+
+> Speak a thought into your phone. It travels end-to-end encrypted through JotDrop Cloud. Joplin on your desktop brings it in as a normal note, and Joplin's own sync takes it to your other devices.
+
+**Connect in a minute**
+
+1. In the JotDrop app, open **JotDrop Cloud** and tap **Create pairing code**. On [app.jotdrop.net](https://app.jotdrop.net/) you find it under **Connected devices**.
+2. On the board in Joplin desktop, click **JotDrop Cloud** at the top and paste the code.
+3. Choose which notes come in:
+   - **Only new notes.** What is already in your cloud stays out of Joplin. This is the default, so nobody's Joplin fills up by surprise.
+   - **Everything.** All notes already in your cloud come in too.
+
+The button then shows **✓ Cloud**. Click it to see how it is going, to check right away, or to disconnect. Disconnecting keeps the notes that came in.
+
+**What comes along:** text, photos, voice memos (they play on the card), other files, colors, pins, labels and hashtags as Joplin tags, and reminders as Joplin's to-do alarm.
+
+**Who wins:** your Joplin. A note you edited or removed in Joplin is never overwritten or brought back. As long as you did not touch it, a change in the app updates it here. A note you delete in the app stays in Joplin.
+
+**Good to know**
+
+- **It goes one way.** Notes you make in Joplin do not go to the JotDrop app.
+- **Desktop does the fetching, while Joplin is open.** It looks every 30 seconds. Notes made while Joplin is closed come in after you open it. On Joplin for Android you see them through Joplin's own sync; connecting from Android itself is not possible.
+- **Connect one computer.** Joplin's own sync takes the notes to your other devices. A second connected computer makes no duplicate notes, but if both bring in the same photo before they sync, Joplin can add a note called "Attachment conflict".
+- **Encryption ends at your Joplin.** On the way through JotDrop Cloud a note is end-to-end encrypted. Once it is a Joplin note, Joplin's settings apply: its own end-to-end encryption is optional and off by default, so turn it on if your sync target should not read your notes.
+- **Joplin counts as a device.** The free plan has 2: your phone and one Joplin. Attachments follow your plan's file size. See [the plans](#jotdrop-cloud).
+- **Repeating reminders** come in with their first date only.
+- **Archive and trash** in the app stay out of Joplin.
+
 ## How it works
 
 JotDrop for Joplin is deliberately simple plumbing:
@@ -144,13 +175,14 @@ JotDrop for Joplin is deliberately simple plumbing:
 - **Your text is not touched** by color, pin, archive or a card's place. Those are stored as plugin data on the note, and they travel along with Joplin's own sync and its end-to-end encryption, when you turn that on.
 - **Ticking a box or writing a quick note** does change your note, because that is what you asked for. It stays a normal Joplin note.
 - **A reminder** is the one thing that changes how a note behaves in Joplin. Joplin only has alarms for to-dos, so a plain note becomes a to-do when you set one. Remove the reminder and it is a plain note again.
-- **Everything goes through Joplin's plugin API.** The plugin makes no network requests and needs no account.
+- **Everything on your computer goes through Joplin's plugin API.** Without JotDrop Cloud the plugin makes no network requests and needs no account.
+- **With JotDrop Cloud connected,** Joplin desktop asks the cloud for new notes every 30 seconds. It decrypts them on your computer with a key the server never sees. Its data about what came in stays in the plugin's own folder, and nothing is ever sent back.
 
 Uninstall the plugin and your notes are still your Joplin notes. Only the board note and its notebook stay behind, and you can delete those.
 
 ## The rest of JotDrop: Android app and JotDrop Cloud
 
-JotDrop for Joplin is part of [JotDrop](https://jotdrop.net/), the private Google Keep alternative. You don't need any of the below to use the plugin, and the plugin does not connect to any of it. It is there if you ever want Keep-style notes outside Joplin, or for someone you know who does.
+JotDrop for Joplin is part of [JotDrop](https://jotdrop.net/), the private Google Keep alternative. You don't need any of the below to use the board. It is there if you want to [catch notes on your phone and find them in Joplin](#from-the-jotdrop-app-into-joplin), if you ever want Keep-style notes outside Joplin, or for someone you know who does.
 
 ### The JotDrop Android app
 
@@ -177,7 +209,7 @@ Get it from the [JotDrop releases on GitHub](https://github.com/Diexar-Labs/jotd
 
 ### JotDrop Cloud
 
-The optional, end-to-end encrypted sync for the JotDrop app, the Obsidian plugin and the web app. Each note and attachment is encrypted on your device with AES-256-GCM before it leaves, so the server holds no readable copy. It does see account details such as your email address, your devices and the size and time of your files. A time machine lets you look back at an earlier moment and restore it.
+The optional, end-to-end encrypted sync for the JotDrop app, the Obsidian plugin and the web app, and the way their notes reach Joplin. Each note and attachment is encrypted on your device with AES-256-GCM before it leaves, so the server holds no readable copy. It does see account details such as your email address, your devices and the size and time of your files. A time machine lets you look back at an earlier moment and restore it.
 
 | | **Free** | **Plus** |
 | --- | --- | --- |
@@ -189,7 +221,7 @@ The optional, end-to-end encrypted sync for the JotDrop app, the Obsidian plugin
 
 Current prices are on the [JotDrop pricing page](https://jotdrop.net/#pricing). The free plan needs no payment details. All of it is explained in the [JotDrop repository](https://github.com/Diexar-Labs/jotdrop#jotdrop-cloud).
 
-**Joplin users:** your Joplin notes do not go to JotDrop Cloud. Joplin has its own sync, and that is what the plugin uses. Want to move notes to JotDrop instead? Export them from Joplin as Markdown with resources (not JEX) and import them in JotDrop.
+**Joplin users:** your Joplin notes do not go to JotDrop Cloud. Notes only travel from the cloud into Joplin, and Joplin's own sync keeps doing the rest. Want to move notes to JotDrop instead? Export them from Joplin as Markdown with resources (not JEX) and import them in JotDrop.
 
 ## FAQ
 
@@ -206,7 +238,13 @@ It sits on top of Joplin's own sync, so it follows whichever target you use. We 
 That is up to your Joplin settings. Joplin's end-to-end encryption is optional and off by default. Turn it on in Joplin and the plugin data travels with it.
 
 **Do I need a JotDrop account or JotDrop Cloud?**
-No. The plugin has no account, no server and no network requests of its own.
+Not for the board. Without JotDrop Cloud the plugin has no account, no server and no network requests of its own. You only need the cloud to bring in notes from the JotDrop app, and the free plan is enough for a phone and one Joplin.
+
+**Can notes from the JotDrop app appear in Joplin?**
+Yes. [Connect JotDrop Cloud](#from-the-jotdrop-app-into-joplin) on Joplin desktop and they come in as ordinary notes. It goes one way, and whatever you changed in Joplin stays as you left it.
+
+**Are notes from JotDrop Cloud still encrypted in Joplin?**
+On the way, yes, end to end. In Joplin they are normal notes, so Joplin's own encryption setting applies.
 
 **Does it work on iPhone or iPad?**
 No. On iOS, Joplin only allows the plugins it recommends itself.
@@ -222,6 +260,7 @@ We tested it with 5,000 notes on desktop and 2,000 on Android. The board only fe
 - **Two devices, one note.** If two devices change the plugin data of the same note before they sync, only the change of the device that syncs first stays. This is about colors, pins and order, not about your text.
 - **Long words on a phone.** A long word in a card title can break in the middle of the word.
 - **First open.** The first time, you open the board yourself. After that it opens when Joplin starts.
+- **Renamed and edited at once.** A note that gets a new file name and new text in the same sync comes in as a new note. The JotDrop app does not rename notes when you edit them.
 
 ## Contributing
 
@@ -249,7 +288,7 @@ npm ci
 npm run typecheck
 npm test
 npm run build        # dist/ and publish/net.jotdrop.joplin.jpl
-npm run check:shared # is the shared card code still the same as JotDrop's website?
+npm run check:shared # is the shared card and cloud code still the same as JotDrop's?
 ```
 
 For development, start Joplin desktop with `--dev-plugins <path to dist>`.

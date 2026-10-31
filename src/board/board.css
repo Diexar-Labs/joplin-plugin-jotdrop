@@ -104,3 +104,5 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :root[data-platform="mobile"] .note-preview { max-height: 190px; }
 :root[data-platform="mobile"] .card-cover { max-height: 150px; }
 @media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-search { max-width: none; } }
+:root[data-platform="mobile"] .jd-cloud { display: none; }
+.card-audio { display: block; width: 100%; height: 36px; margin: 2px 0 8px; }

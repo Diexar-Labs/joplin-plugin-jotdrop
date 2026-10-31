@@ -7,9 +7,9 @@
 		"desktop",
 		"mobile"
 	],
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"name": "JotDrop",
-	"description": "All your notes as Google Keep-style cards: pin, color, drag into your own order, tick checklists, set reminders, archive, and take a quick note. No account needed.",
+	"description": "All your notes as Google Keep-style cards: pin, color, drag into your own order, tick checklists, set reminders, archive, and take a quick note. No account needed. Optional: bring in notes from the JotDrop app through JotDrop Cloud.",
 	"author": "Diexar Labs",
 	"homepage_url": "https://jotdrop.net/",
 	"repository_url": "https://github.com/Diexar-Labs/joplin-plugin-jotdrop",
