@@ -271,14 +271,6 @@ This is a project shared in the open. Bug fixes, translations and small features
 - Bugs and ideas: [open an issue](https://github.com/Diexar-Labs/joplin-plugin-jotdrop/issues/new). Issues are public, so never paste passwords or private notes.
 - Anything else: hello@jotdrop.net
 
-## Support
-
-The plugin is free. If JotDrop saves you time and you feel like saying thanks:
-
-<a href="https://ko-fi.com/L3L11ZETB9"><img src="https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
-
-No obligations. Totally optional.
-
 ## Build
 
 Requires Node.js 20 or newer.
