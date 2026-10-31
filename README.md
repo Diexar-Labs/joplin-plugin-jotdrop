@@ -89,7 +89,6 @@ Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins
 ### Look
 
 - **Light and dark**, following your Joplin theme.
-- **English and Dutch**.
 
 <table>
   <tr>
