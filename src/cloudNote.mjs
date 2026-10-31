@@ -3,7 +3,10 @@ import { isPreserved } from './cloud-shared/sync.mjs';
 
 // How a file from JotDrop Cloud becomes a Joplin note. No Joplin API in here, so it can be tested on its own.
 
-export const isCloudNote = (path) => /^notes\/.*\.md$/i.test(path) && !/^notes\/(archive|trash)\//i.test(path) && !isPreserved(path.split('/').pop());
+// A shared space's folder (notes/Shared/<id>/) is not part of the vault, the same rule as isSpacePath in JotDrop's cloud/shared/crypto.mjs.
+const spacePath = /^notes\/shared\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i;
+
+export const isCloudNote = (path) => /^notes\/.*\.md$/i.test(path) && !/^notes\/(archive|trash)\//i.test(path) && !spacePath.test(path) && !isPreserved(path.split('/').pop());
 
 /** The same note and file get the same Joplin ID on every computer, so two connected Joplins never make two notes. */
 export async function stableId(vaultId, name) {
