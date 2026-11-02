@@ -1,4 +1,4 @@
-import { bytesToBase64, MAX_FILE_BYTES, normalizePath } from './crypto.mjs';
+import { bytesToBase64, isSpacePath, MAX_FILE_BYTES, normalizePath } from './crypto.mjs';
 import { mergeNote } from './merge.mjs';
 
 // Two-way sync of a local notes folder, the same rules as Android's CloudSyncEngine.
@@ -41,8 +41,9 @@ export function copyName(path, suffix) {
 export async function syncFolder(remote, local, tracked, persist, { checkActive = () => {}, seen = {}, progress = (done, total) => {}, maxFileBytes = MAX_FILE_BYTES } = {}) {
   checkActive();
   const result = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, skipped: [] };
-  const files = await local.list();
-  const entries = await remote.list();
+  const files = new Map([...await local.list()].filter(([name]) => !isSpacePath(name)));
+  const entries = (await remote.list()).filter((entry) => !isSpacePath(entry.path));
+  for (const name of Object.keys(tracked)) if (isSpacePath(name)) delete tracked[name];
   const clouds = new Map();
   for (const entry of entries) {
     if (clouds.has(syncPath(entry.path))) throw new Error('Duplicate encrypted cloud paths');
@@ -142,6 +143,12 @@ export async function syncFolder(remote, local, tracked, persist, { checkActive 
       progress(done, names.length);
       const entry = clouds.get(name), base = next[name];
       const { localHash, bytes } = files.has(name) ? await scan(name) : { localHash: null, bytes: null };
+      // The newest version does not open. A change made here goes on top of it, which repairs the note; nothing else can be decided.
+      if (entry?.bad) {
+        if (localHash === entry.hash) await remember(entry);
+        else if (localHash) await upload(name, bytes, entry.revision);
+        continue;
+      }
       if (!entry) {
         if (base) throw new Error('A tracked cloud object disappeared. Local files were kept');
         if (localHash) await upload(name, bytes, 0);
@@ -197,7 +204,7 @@ export async function syncFolder(remote, local, tracked, persist, { checkActive 
  * `index` is `{ cursor, objects: { [id]: { path, revision, deleted, hash } }, pending: { [id]: revision } }` and is
  * updated in place; `save` keeps it, so a first sync cut off halfway goes on from where it was.
  */
-export async function remoteFiles(client, index, { checkActive = () => {}, save = async () => {}, progress = (done, total) => {} } = {}) {
+export async function remoteFiles(client, index, { checkActive = () => {}, save = async () => {}, progress = (done, total) => {}, skipBad = /** @type {((path: string) => boolean) | undefined} */ (undefined) } = {}) {
   index.pending ??= {};
   for (let more = true; more;) {
     checkActive();
@@ -213,6 +220,12 @@ export async function remoteFiles(client, index, { checkActive = () => {}, save 
   await save();
   const loaded = new Map(), waiting = Object.keys(index.pending);
   let kept = 0, savedAt = Date.now();
+  // The version before stays, marked: a path with a baseline must not vanish. A later good version replaces it.
+  const leaveOut = (id) => {
+    const old = index.objects[id];
+    if (old) index.objects[id] = { ...old, revision: index.pending[id] ?? old.revision, bad: true };
+    delete index.pending[id];
+  };
   try {
     for (const [done, id] of waiting.entries()) {
       checkActive();
@@ -221,8 +234,20 @@ export async function remoteFiles(client, index, { checkActive = () => {}, save 
       // The manifest is enough to compare; pieces are downloaded only for a file that is missing or different here.
       // A file cleared from a full free cloud after 30 days in the trash stays in the feed but reads as 404.
       try { entry = await client.readManifest(id); }
-      catch (error) { if (error.status !== 404) throw error; delete index.objects[id]; delete index.pending[id]; continue; }
+      catch (error) {
+        // In a shared space another person writes the files: one that does not open is left out, and nobody's sync stops.
+        const unreadable = skipBad && error.status === undefined && !(error instanceof TypeError) && !['AbortError', 'TimeoutError'].includes(error.name);
+        if (error.status !== 404 && !unreadable) throw error;
+        if (unreadable) leaveOut(id);
+        else { delete index.objects[id]; delete index.pending[id]; }
+        continue;
+      }
       const { manifest } = entry;
+      if (skipBad) {
+        let bad = true;
+        try { syncPath(manifest.path); bad = skipBad(manifest.path); } catch { /* Not a path this sync accepts. */ }
+        if (bad) { index.pending[id] = entry.revision; leaveOut(id); continue; }
+      }
       index.objects[id] = { path: syncPath(manifest.path), revision: entry.revision, deleted: Boolean(entry.deleted), hash: fromHex(manifest.hash) };
       delete index.pending[id];
       if (manifest.bytes && kept + manifest.size <= KEPT_BYTES) { loaded.set(id, manifest.bytes); kept += manifest.size; }
