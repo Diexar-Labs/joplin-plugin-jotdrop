@@ -1,5 +1,7 @@
 import { noteUrls, previewLines, urlHost } from './note.js';
 import { planMove, sortCards } from './order.js';
+import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
+import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
 
 const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
@@ -14,6 +16,8 @@ const STRINGS = {
     archive: 'Archive', unarchive: 'Back to the board', archived: 'Note archived', unarchived: 'Note back on the board', archiveView: 'Archive', archiveEmpty: 'Nothing in the archive.',
     remind: 'Remind me', laterToday: 'Later today', tomorrow: 'Tomorrow', nextWeek: 'Next week', pickTime: 'Pick a date and time', setReminder: 'Set reminder', removeReminder: 'Remove reminder', reminderAndroid: 'Allow notifications for Joplin in your phone settings, or this reminder stays silent.',
     colors: ['Default', 'Red', 'Orange', 'Yellow', 'Cream', 'Slate blue', 'Blue', 'Purple', 'Pink', 'Brown', 'Gray'],
+    drawing: 'Drawing', newDrawing: 'New drawing', editDrawing: 'Edit drawing', drawingSaved: 'Drawing saved', drawingDesktop: 'Drawing works in Joplin on the desktop for now.',
+    drawLabels: {},
   },
   nl: {
     search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
@@ -25,6 +29,13 @@ const STRINGS = {
     archive: 'Archiveren', unarchive: 'Terug op het bord', archived: 'Notitie gearchiveerd', unarchived: 'Notitie staat weer op het bord', archiveView: 'Archief', archiveEmpty: 'Niets in het archief.',
     remind: 'Herinner me', laterToday: 'Later vandaag', tomorrow: 'Morgen', nextWeek: 'Volgende week', pickTime: 'Kies datum en tijd', setReminder: 'Herinnering zetten', removeReminder: 'Herinnering weghalen', reminderAndroid: 'Sta meldingen voor Joplin toe in je telefooninstellingen, anders blijft deze herinnering stil.',
     colors: ['Standaard', 'Rood', 'Oranje', 'Geel', 'Crème', 'Leiblauw', 'Blauw', 'Paars', 'Roze', 'Bruin', 'Grijs'],
+    drawing: 'Tekening', newDrawing: 'Nieuwe tekening', editDrawing: 'Tekening bewerken', drawingSaved: 'Tekening bewaard', drawingDesktop: 'Tekenen werkt voorlopig in Joplin op de desktop.',
+    drawLabels: {
+      title: 'Tekening', save: 'Opslaan', cancel: 'Annuleren', canvas: 'Tekenvlak', colors: 'Kleur', widths: 'Dikte',
+      black: 'Zwart', blue: 'Blauw', red: 'Rood', green: 'Groen', orange: 'Oranje', purple: 'Paars',
+      thin: 'Dun', medium: 'Middel', thick: 'Dik', eraser: 'Gum', undo: 'Ongedaan maken', redo: 'Opnieuw', clear: 'Wissen',
+      clearAsk: 'De hele tekening wissen?', discardAsk: 'Deze tekening weggooien?', saving: 'Opslaan…',
+    },
   },
 };
 
@@ -77,6 +88,7 @@ const PALETTE = 'M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.
 const BELL = 'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z';
 const BOX = 'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z';
 const UNBOX = 'M20.55 5.22l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.15.55L3.46 5.22C3.17 5.57 3 6.01 3 6.5V19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.49-.17-.93-.45-1.28zM12 9.5l5.5 5.5H14v2h-4v-2H6.5L12 9.5zM5.12 5l.82-1h12l.93 1H5.12z';
+const PENCIL = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
 const LINK = 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z';
 
 async function post(message) {
@@ -153,6 +165,7 @@ async function update(message, done) {
     replaceCard(await post(message));
     if (done) toast(done);
   } catch (error) {
+    if (message.type === 'saveDrawing') throw error;
     toast(String(error && error.message).includes('changed') ? t.changed : t.failed);
     await load();
   }
@@ -235,6 +248,15 @@ function buildShell() {
       } catch { toast(t.failed); }
       scheduleReload(0);
     } });
+  // Drawing is for everyone (Eric, 2 Nov): a new drawing becomes a note with the picture in it, like on Android.
+  const draw = h('button', { type: 'button', class: 'jd-chip jd-draw', title: t.newDrawing, 'aria-label': t.newDrawing,
+    onclick: () => openDrawing(null, async (png) => {
+      const card = await post({ type: 'saveDrawing', png, name: drawingFileName(), title: t.drawing, folderId: state.folderId });
+      previews.set(card.id, card.preview);
+      state.cards.unshift(card);
+      renderAll(true);
+      toast(t.drawingSaved);
+    }) }, icon(PENCIL), ` ${t.drawing}`);
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
@@ -243,13 +265,73 @@ function buildShell() {
   els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
-    h('div', { class: 'jd-filters' }, search, folder, archive, cloud));
+    h('div', { class: 'jd-filters' }, search, folder, archive, draw, cloud));
   document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
   document.addEventListener('click', closeMenu);
   setupDrag();
+}
+
+// ---- drawing ----
+
+// A yes/no box inside the drawing overlay: the webview has no window.confirm of its own.
+function ask(overlay, text, yesLabel) {
+  return new Promise((resolve) => {
+    const done = (answer) => { box.remove(); resolve(answer); };
+    const box = h('div', { class: 'jd-draw-ask', role: 'alertdialog', 'aria-modal': 'true' },
+      h('p', { text }),
+      h('div', { class: 'jd-draw-ask-actions' },
+        h('button', { type: 'button', onclick: () => done(false) }, t.drawLabels.cancel || 'Cancel'),
+        h('button', { type: 'button', class: 'jd-draw-ask-yes', onclick: () => done(true) }, yesLabel)));
+    overlay.append(box);
+    box.querySelector('.jd-draw-ask-yes').focus();
+  });
+}
+
+// The drawing screen shared with the web app and the Obsidian plugin, over the board. `onSave` gets the PNG as base64.
+function openDrawing(initial, onSave) {
+  const labels = { ...t.drawLabels };
+  const overlay = h('div', { class: 'jd-draw-overlay', role: 'dialog', 'aria-modal': 'true' });
+  const editor = createDrawingEditor({
+    initial,
+    labels,
+    confirm: (text) => ask(overlay, text, text === (labels.clearAsk || 'Clear the whole drawing?') ? (labels.clear || 'Clear') : (labels.discard || 'Discard')),
+    onCancel: () => overlay.remove(),
+    onSave: async ({ png }) => {
+      let text = '';
+      for (let i = 0; i < png.length; i += 0x8000) text += String.fromCharCode(...png.subarray(i, i + 0x8000));
+      try {
+        await onSave(btoa(text));
+      } catch (error) {
+        throw new Error(String(error && error.message) === 'desktop' ? t.drawingDesktop : t.failed);
+      }
+      overlay.remove();
+    },
+  });
+  overlay.append(editor.element);
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); editor.close(); } });
+  document.body.append(overlay);
+  editor.canvas.focus();
+}
+
+// Edit drawing: the lines of the card's picture open again; saving makes a new picture that takes its place in the note.
+async function editDrawing(c, image) {
+  let drawing = null;
+  try {
+    const data = atob(await post({ type: 'drawingData', id: image.id }));
+    drawing = readDrawing(Uint8Array.from(data, (ch) => ch.charCodeAt(0)));
+  } catch { /* not readable: told below */ }
+  if (!drawing) return toast(t.failed);
+  openDrawing(drawing, async (png) => {
+    await update({ type: 'saveDrawing', png, name: drawingFileName(), noteId: c.id, replaces: image.id }, t.drawingSaved);
+  });
+}
+
+function drawButton(c, image) {
+  return h('button', { type: 'button', class: 'jd-act jd-draw-edit', title: t.editDrawing, 'aria-label': t.editDrawing,
+    onclick: (e) => { e.stopPropagation(); editDrawing(c, image); } }, icon(PENCIL));
 }
 
 function buildComposer() {
@@ -438,7 +520,7 @@ function cardEl(c) {
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
       onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
-    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), archiveButton(c)));
+    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     post({ type: 'open', id: c.id }).catch(() => toast(t.failed));

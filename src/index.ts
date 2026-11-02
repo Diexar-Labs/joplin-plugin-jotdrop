@@ -1,6 +1,7 @@
 import joplin from 'api';
 import { MenuItemLocation, ModelType, SettingItemType, ToolbarButtonLocation } from 'api/types';
 import { cloudStatus, openCloud, registerCloudSettings, startCloud } from './cloudInbox';
+import { isDrawingName } from './cloud-shared/drawing.mjs';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
 // shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
@@ -18,7 +19,8 @@ const META_FIELDS = ['id', 'parent_id', 'title', 'is_todo', 'todo_completed', 't
 const PREVIEW_CHARS = 6000;
 
 const views = new Set<string>();
-const imageCache = new Map<string, string | null>();
+// Per image resource: where the webview can load it, and whether it is a JotDrop drawing (its lines travel inside the PNG).
+const imageCache = new Map<string, { url: string; drawing: boolean } | null>();
 let platform = 'desktop';
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
@@ -50,19 +52,21 @@ function fileUrl(path: string) {
 	return path.startsWith('/') ? `file://${encodeURI(path)}` : `file:///${encodeURI(path.replace(/\\/g, '/'))}`;
 }
 
-async function firstImage(body: string): Promise<{ id: string; url: string } | null> {
+async function firstImage(body: string): Promise<{ id: string; url: string; drawing: boolean } | null> {
 	const ids = [...body.matchAll(/!\[[^\]]*\]\(:\/([0-9a-fA-F]{32})[^)]*\)|<img\b[^>]*\bsrc=["']:\/([0-9a-fA-F]{32})/g)].map((m) => m[1] || m[2]);
 	for (const id of ids) {
 		if (!imageCache.has(id)) {
 			try {
-				const resource = await joplin.data.get(['resources', id], { fields: ['id', 'mime'] });
-				imageCache.set(id, resource && String(resource.mime).startsWith('image/') ? fileUrl(await joplin.data.resourcePath(id)) : null);
+				const resource = await joplin.data.get(['resources', id], { fields: ['id', 'mime', 'title'] });
+				imageCache.set(id, resource && String(resource.mime).startsWith('image/')
+					? { url: fileUrl(await joplin.data.resourcePath(id)), drawing: isDrawingName(String(resource.title || '')) }
+					: null);
 			} catch {
 				imageCache.set(id, null);
 			}
 		}
-		const url = imageCache.get(id);
-		if (url) return { id, url };
+		const image = imageCache.get(id);
+		if (image) return { id, ...image };
 	}
 	return null;
 }
@@ -178,9 +182,7 @@ function base64(bytes: Uint8Array) {
 	return btoa(text);
 }
 
-// Fallback when the webview may not read the resource file directly (expected on mobile).
-async function imageData(id: string) {
-	const resource = await joplin.data.get(['resources', id], { fields: ['mime'] });
+async function resourceBytes(id: string): Promise<Uint8Array> {
 	const file: any = await joplin.data.get(['resources', id, 'file']);
 	const body = file && file.body !== undefined ? file.body : file;
 	let bytes: Uint8Array | null = null;
@@ -188,7 +190,44 @@ async function imageData(id: string) {
 	else if (body && body.type === 'Buffer' && Array.isArray(body.data)) bytes = Uint8Array.from(body.data);
 	else if (body instanceof ArrayBuffer) bytes = new Uint8Array(body);
 	if (!bytes) throw new Error('No image data');
-	return `data:${resource.mime};base64,${base64(bytes)}`;
+	return bytes;
+}
+
+// Fallback when the webview may not read the resource file directly (expected on mobile).
+async function imageData(id: string) {
+	const resource = await joplin.data.get(['resources', id], { fields: ['mime'] });
+	return `data:${resource.mime};base64,${base64(await resourceBytes(id))}`;
+}
+
+// A drawing (a PNG with its lines inside, the same format as the JotDrop app) becomes a resource; the note gets its
+// embed, or an earlier drawing's embed is pointed at the new one. Always a new resource, so the earlier picture stays.
+// The resource API takes a file path, and only desktop can write one.
+async function saveDrawing(message: any) {
+	if (platform !== 'desktop') throw new Error('desktop');
+	const name = String(message.name || 'drawing.png');
+	const bytes = Uint8Array.from(atob(String(message.png)), (c) => c.charCodeAt(0));
+	const fs = joplin.require('fs-extra');
+	const temp = `${await joplin.plugins.dataDir()}/${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+	await fs.writeFile(temp, bytes);
+	let resource: any;
+	try {
+		resource = await joplin.data.post(['resources'], null, { title: name }, [{ path: temp }]);
+	} finally {
+		await fs.remove(temp);
+	}
+	const embed = `![${name}](:/${resource.id})`;
+	if (message.noteId) {
+		const note = await joplin.data.get(['notes', message.noteId], { fields: ['id', 'body'] });
+		const body: string = String(note.body || '');
+		// The earlier drawing's embed becomes the new one's (name and id); any other link to it follows the id.
+		const replaced = message.replaces && body.includes(`:/${message.replaces}`)
+			? body.replace(new RegExp(`!\\[[^\\]]*\\]\\(:/${message.replaces}[^)]*\\)`, 'g'), embed).split(`:/${message.replaces}`).join(`:/${resource.id}`)
+			: `${body.replace(/\s+$/, '')}\n\n${embed}\n`;
+		await joplin.data.put(['notes', message.noteId], null, { body: replaced });
+		return cardFor(message.noteId);
+	}
+	const note = await joplin.data.post(['notes'], null, { title: String(message.title || ''), body: `${embed}\n`, parent_id: message.folderId || await boardFolderId() });
+	return cardFor(note.id);
 }
 
 async function boardFolderId() {
@@ -240,6 +279,8 @@ async function answer(message: any) {
 		return cardFor(note.id);
 	}
 	case 'imageData': return imageData(message.id);
+	case 'drawingData': return base64(await resourceBytes(message.id));
+	case 'saveDrawing': return saveDrawing(message);
 	case 'cloud': return openCloud(notifyBoards);
 	}
 	return null;
