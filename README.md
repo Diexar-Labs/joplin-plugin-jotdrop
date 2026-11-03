@@ -205,7 +205,7 @@ A separate, native notes app with the same kind of cards. Share links, text and 
   </tr>
 </table>
 
-Get it from the [JotDrop releases on GitHub](https://github.com/Diexar-Labs/jotdrop/releases). There are also a [JotDrop plugin for Obsidian](https://community.obsidian.md/plugins/jotdrop), a [web app](https://app.jotdrop.net/) and a [Chrome clipper](https://chromewebstore.google.com/detail/jotdrop-web-clipper/mkgcicjljogifeaccaclbcoemllmgjfo) that works together with the Obsidian desktop plugin.
+Get it on [Google Play](https://play.google.com/store/apps/details?id=com.diexar.keepcapture), where it updates by itself, or as an APK from the [JotDrop releases on GitHub](https://github.com/Diexar-Labs/jotdrop/releases). There are also a [JotDrop plugin for Obsidian](https://community.obsidian.md/plugins/jotdrop), a [web app](https://app.jotdrop.net/) and a [Chrome clipper](https://chromewebstore.google.com/detail/jotdrop-web-clipper/mkgcicjljogifeaccaclbcoemllmgjfo) that works together with the Obsidian desktop plugin.
 
 ### JotDrop Cloud
 
