@@ -2,6 +2,7 @@ import joplin from 'api';
 import { ModelType, SettingItemType } from 'api/types';
 import { CloudClient, CloudError } from './cloud-shared/client.mjs';
 import { noteSummary } from './cloud-shared/note.mjs';
+import { validExpires } from './cloud-shared/paper.mjs';
 import { remoteFiles } from './cloud-shared/sync.mjs';
 import { baseline, createdTime, followMoves, isCloudNote, linkAttachments, stableId, titleAndBody, wantedTags } from './cloudNote.mjs';
 
@@ -91,7 +92,7 @@ type Text = typeof STRINGS.en;
 const text = async (): Promise<Text> => STRINGS[String(await joplin.settings.globalValue('locale') || 'en').slice(0, 2)] || STRINGS.en;
 
 // `text` fingerprints the title and text as they came in, so an edit in Joplin shows on any computer.
-type Kept = { id?: string; hash: string; text?: string; color?: string; pinned?: boolean; tags?: string[]; due?: number; skip?: boolean };
+type Kept = { id?: string; hash: string; text?: string; color?: string; pinned?: boolean; tags?: string[]; due?: number; expires?: string; skip?: boolean };
 type State = { vaultId: string; mode: 'new' | 'all'; baselined: boolean; index: any; notes: Record<string, Kept> };
 
 // Lost or unreadable state means nothing extra comes in: the safe side of "only new notes".
@@ -166,11 +167,11 @@ async function allTags() {
 	}
 }
 
-const metaOf = (summary: any) => ({ color: COLORS.has(summary.color) ? summary.color : '', pinned: !!summary.pinned, due: Date.parse(summary.reminder || '') || 0, tags: wantedTags(summary) });
+const metaOf = (summary: any) => ({ color: COLORS.has(summary.color) ? summary.color : '', pinned: !!summary.pinned, due: Date.parse(summary.reminder || '') || 0, expires: validExpires(summary.expires), tags: wantedTags(summary) });
 
 // Only what changed in the app since the last time, so a colour or pin set on the board stays.
 async function applyMeta(id: string, summary: any, before: Kept | undefined, tags: Map<string, string>) {
-	const { color, pinned, due, tags: wanted } = metaOf(summary);
+	const { color, pinned, due, expires, tags: wanted } = metaOf(summary);
 	const keep = async (key: string, value: unknown, old: unknown) => {
 		if (value === (old ?? (typeof value === 'string' ? '' : false))) return;
 		if (value) await joplin.data.userDataSet(ModelType.Note, id, key, value);
@@ -178,6 +179,7 @@ async function applyMeta(id: string, summary: any, before: Kept | undefined, tag
 	};
 	await keep('color', color, before?.color);
 	await keep('pinned', pinned, before?.pinned);
+	await keep('expires', expires, before?.expires);
 	if (due && due !== before?.due) {
 		await joplin.data.userDataSet(ModelType.Note, id, 'madeTodo', true);
 		await joplin.data.put(['notes', id], null, { is_todo: 1, todo_due: due });

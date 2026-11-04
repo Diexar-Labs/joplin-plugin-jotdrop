@@ -135,3 +135,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-draw svg { width: 18px; height: 18px; fill: currentColor; }
 .jd-chip.jd-draw { display: inline-flex; align-items: center; gap: 4px; }
 .jd-chip.jd-draw svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* Paper drawer: its chip with a tray icon, small drawers after it, the intro and the expiry badge. */
+.jd-paper-chip { display: inline-flex; align-items: center; gap: 4px; }
+.jd-paper-chip svg, .jd-drawerchip svg { width: 15px; height: 15px; fill: currentColor; flex: none; }
+.jd-paper-chip.is-small-drawer { border-style: dashed; }
+.jd-paper-chip.is-small-drawer[aria-pressed="true"] { border-style: solid; }
+.jd-chip-count { margin-left: 2px; font-size: .75rem; opacity: .75; }
+.jd-paper-intro { position: relative; max-width: 600px; margin: 0 auto 22px; padding: 16px 20px; border: 1.5px solid var(--edge); border-radius: 10px 10px 18px 10px; background: var(--surface); box-shadow: 4px 4px 0 var(--amber); }
+.jd-paper-intro.is-tip { padding: 10px 44px 10px 16px; font-size: .9rem; }
+.jd-paper-intro-head { display: flex; align-items: center; gap: 8px; }
+.jd-paper-intro-head svg { width: 22px; height: 22px; fill: currentColor; flex: none; }
+.jd-paper-intro-head h2 { margin: 0; font-family: var(--heading); font-size: 1.25rem; }
+.jd-paper-intro-lead { margin: 8px 0 0; font-weight: 600; }
+.jd-paper-intro ul { margin: 8px 0; padding-left: 20px; }
+.jd-paper-intro li { margin: 4px 0; }
+.jd-paper-intro-phone { margin: 0; color: var(--muted); font-size: .85rem; }
+.jd-paper-intro-close { position: absolute; top: 6px; right: 6px; }
+.card-expires { margin-right: 4px; }
+.menu-paper { min-width: 240px; }
+.menu-paper .menu-pick:first-child { margin-top: 0; border-top: 0; }

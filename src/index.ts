@@ -2,10 +2,12 @@ import joplin from 'api';
 import { MenuItemLocation, ModelType, SettingItemType, ToolbarButtonLocation } from 'api/types';
 import { cloudStatus, openCloud, registerCloudSettings, startCloud } from './cloudInbox';
 import { isDrawingName } from './cloud-shared/drawing.mjs';
+import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
 // shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
-// the note's user_data (synced by Joplin, never written into the note text).
+// the note's user_data (synced by Joplin, never written into the note text), and so does a paper's expiry date.
+// The Paper drawer and its small drawers are tags: "paper drawer" and "paper drawer/work".
 
 const PLUGIN_ID = 'net.jotdrop.joplin';
 const VIEW_ID = 'jotdropBoard';
@@ -100,6 +102,7 @@ function toMeta(note: any, tags: string[]) {
 		pinned: meta.pinned === true,
 		archived: meta.archived === true,
 		color: COLORS.has(String(meta.color)) ? String(meta.color) : 'default',
+		expires: validExpires(meta.expires),
 		tags,
 	};
 }
@@ -130,15 +133,18 @@ async function cardFor(id: string) {
 
 async function loadBoard() {
 	const boardId = await findBoardNoteId();
-	const [notes, folders, tags] = await Promise.all([
+	const [notes, folders, tags, allTags] = await Promise.all([
 		allPages(['notes'], { fields: META_FIELDS }),
 		allPages(['folders'], { fields: ['id', 'title', 'parent_id'] }),
 		tagMap(),
+		allPages(['tags'], { fields: ['title'] }),
 	]);
+	// Small drawers show up before they hold a paper, so a new one can be filled.
+	const drawers = allTags.map((tag) => String(tag.title)).filter((title) => isPaperDrawer(title) && title.includes('/'));
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
 		.map((note) => toMeta(note, tags.get(note.id) || []));
-	return { cards, folders, platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
+	return { cards, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
@@ -163,6 +169,34 @@ async function setReminder(id: string, due: number) {
 		await joplin.data.put(['notes', id], null, { todo_due: 0 });
 	}
 	return cardFor(id);
+}
+
+async function tagId(title: string) {
+	const found = (await allPages(['tags'], { fields: ['id', 'title'] })).find((tag) => tag.title === title);
+	return found ? found.id : (await joplin.data.post(['tags'], null, { title })).id;
+}
+
+// A small drawer is the tag "paper drawer/<name>"; Joplin keeps tags in lower case.
+async function newDrawer(name: string) {
+	const clean = String(name || '').replace(/\//g, ' ').trim();
+	if (!clean) throw new Error('name');
+	const title = drawerLabel(clean).toLowerCase();
+	await tagId(title);
+	return title;
+}
+
+// One drawer per paper: the chosen drawer replaces any other. A warning before the expiry date becomes the reminder,
+// the same rule as JotDrop's app, website and Obsidian (cloud-shared/paper.mjs). No drawer takes the paper out.
+async function setPaper(id: string, drawer: string, expires: string, warn: string) {
+	const want = isPaperDrawer(drawer) ? String(drawer).trim().toLowerCase() : '';
+	const day = want ? validExpires(expires) : '';
+	if (day) await joplin.data.userDataSet(ModelType.Note, id, 'expires', day);
+	else await joplin.data.userDataDelete(ModelType.Note, id, 'expires');
+	const current = await allPages(['notes', id, 'tags'], { fields: ['id', 'title'] });
+	for (const tag of current) if (isPaperDrawer(tag.title) && tag.title !== want) await joplin.data.delete(['tags', tag.id, 'notes', id]);
+	if (want && !current.some((tag) => tag.title === want)) await joplin.data.post(['tags', await tagId(want), 'notes'], null, { id });
+	const reminder = day ? warnReminder(day, warn) : null;
+	return reminder ? setReminder(id, new Date(reminder).getTime()) : cardFor(id);
 }
 
 // The API has no compare-and-swap, so the body is read again right before the write and the
@@ -282,6 +316,9 @@ async function answer(message: any) {
 	case 'drawingData': return base64(await resourceBytes(message.id));
 	case 'saveDrawing': return saveDrawing(message);
 	case 'cloud': return openCloud(notifyBoards);
+	case 'setPaper': return setPaper(message.id, String(message.drawer || ''), String(message.expires || ''), String(message.warn || ''));
+	case 'newDrawer': return newDrawer(message.name);
+	case 'closePaperTip': await joplin.settings.setValue('paperTipClosed', true); return true;
 	}
 	return null;
 }
@@ -359,6 +396,7 @@ joplin.plugins.register({
 		await joplin.settings.registerSettings({
 			boardNoteId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Board note' },
 			openAtStartup: { value: true, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts' },
+			paperTipClosed: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Paper drawer tip closed' },
 		});
 
 		await joplin.views.editors.register(VIEW_ID, {

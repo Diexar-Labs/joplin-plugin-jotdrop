@@ -48,11 +48,11 @@ export function noteSummary(text, path) {
     .map((match) => match[1]).filter((tag) => /\D/.test(tag) && !seen.has(tag.toLowerCase()) && seen.add(tag.toLowerCase()));
   const color = scalar(header, 'color');
   const order = scalar(header, 'order');
-  return { title, body, preview: body.replace(/^\s*#\s+.+(?:\r?\n|$)/, '').trim(), labels, tags, inlineTags, color: colors.has(color) ? color : 'default', pinned: /^(true|yes|on|1)$/i.test(scalar(header, 'pinned')), reminder: scalar(header, 'reminder'), repeat: scalar(header, 'reminder_repeat'), until: scalar(header, 'reminder_until'), limit: scalar(header, 'reminder_limit'), order: order && Number.isFinite(Number(order)) ? Number(order) : undefined };
+  return { title, body, preview: body.replace(/^\s*#\s+.+(?:\r?\n|$)/, '').trim(), labels, tags, inlineTags, color: colors.has(color) ? color : 'default', pinned: /^(true|yes|on|1)$/i.test(scalar(header, 'pinned')), reminder: scalar(header, 'reminder'), expires: scalar(header, 'expires'), repeat: scalar(header, 'reminder_repeat'), until: scalar(header, 'reminder_until'), limit: scalar(header, 'reminder_limit'), order: order && Number.isFinite(Number(order)) ? Number(order) : undefined };
 }
 
 export function updateMetadata(text, changes) {
-  const allowed = new Set(['color', 'pinned', 'jotdrop_labels', 'tags', 'order', 'reminder', 'reminder_repeat', 'reminder_until', 'reminder_limit', 'reminder_done']);
+  const allowed = new Set(['color', 'pinned', 'jotdrop_labels', 'tags', 'order', 'reminder', 'reminder_repeat', 'reminder_until', 'reminder_limit', 'reminder_done', 'expires']);
   if (Object.keys(changes).some((key) => !allowed.has(key))) throw new Error('Unsupported note property.');
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
   if (!match && /^---\r?\n/.test(text)) throw new Error('Close the YAML frontmatter before changing note properties.');
@@ -229,11 +229,12 @@ export function joinNote({ front, title, body }) {
 }
 
 /** The plugin's and Android's filename for a new note: `<yyyy-MM-dd HHmmss> <first words>.md`. */
-/** Manual card order, like the plugin and Android: `order`, else the filename's time stamp (newest first), else 0. */
+/** Manual card order, like the plugin and Android: `order`, else the filename's time stamp (newest first), else 0.
+ *  A date without a time, as Mail to JotDrop names its notes, counts as the end of that day: new mail sits on top of that day (Eric, 3 Nov). */
 export function manualRank(order, path) {
   if (order !== undefined) return order;
-  const stamp = /^(\d{4})-(\d{2})-(\d{2}) (\d{6})/.exec(path.split('/').pop());
-  return stamp ? -Number(stamp.slice(1).join('')) : 0;
+  const stamp = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{6}))?/.exec(path.split('/').pop());
+  return stamp ? -Number(stamp[1] + stamp[2] + stamp[3] + (stamp[4] || '235959')) : 0;
 }
 
 /** The `order` for a card dropped between two ranks (null at an edge), like the plugin; null when no number fits between them. */

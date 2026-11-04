@@ -2,6 +2,7 @@ import { noteUrls, previewLines, urlHost } from './note.js';
 import { planMove, sortCards } from './order.js';
 import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
+import { DEFAULT_WARN, INTRO, PAPER_DRAWER, WARN_OPTIONS, drawerName, expiresBadge, inDrawer, isPaperDrawer, shortDate } from '../cloud-shared/paper.mjs';
 
 const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
@@ -18,6 +19,12 @@ const STRINGS = {
     colors: ['Default', 'Red', 'Orange', 'Yellow', 'Cream', 'Slate blue', 'Blue', 'Purple', 'Pink', 'Brown', 'Gray'],
     drawing: 'Drawing', newDrawing: 'New drawing', editDrawing: 'Edit drawing', drawingSaved: 'Drawing saved', drawingDesktop: 'Drawing works in Joplin on the desktop for now.',
     drawLabels: {},
+    paperDrawer: 'Paper drawer', newDrawer: 'New drawer', newDrawerName: 'Name of the new drawer', newDrawerPlaceholder: 'For example Work', create: 'Create',
+    drawer: 'Drawer', expiresOn: 'Expires on', warnMe: 'Warn me', warnNone: 'No warning',
+    warn: { '1w': '1 week before', '1m': '1 month before', '2m': '2 months before', '3m': '3 months before' },
+    warnHint: 'A warning replaces this note\'s reminder.', save: 'Save', takeOut: 'Take out of the drawer', paperSaved: 'Saved in the paper drawer', tookOut: 'Taken out of the paper drawer',
+    expires: (d) => `Expires ${d}`, expired: (d) => `Expired ${d}`, tipClose: 'Close this tip',
+    intro: { title: INTRO.title, lead: INTRO.lead, points: INTRO.points.map((p) => p.text), phone: INTRO.phone },
   },
   nl: {
     search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
@@ -35,6 +42,20 @@ const STRINGS = {
       black: 'Zwart', blue: 'Blauw', red: 'Rood', green: 'Groen', orange: 'Oranje', purple: 'Paars',
       thin: 'Dun', medium: 'Middel', thick: 'Dik', eraser: 'Gum', undo: 'Ongedaan maken', redo: 'Opnieuw', clear: 'Wissen',
       clearAsk: 'De hele tekening wissen?', discardAsk: 'Deze tekening weggooien?', saving: 'Opslaan…',
+    },
+    paperDrawer: 'Paper drawer', newDrawer: 'Nieuw laatje', newDrawerName: 'Naam van het nieuwe laatje', newDrawerPlaceholder: 'Bijvoorbeeld Werk', create: 'Maken',
+    drawer: 'Laatje', expiresOn: 'Verloopt op', warnMe: 'Waarschuw me', warnNone: 'Geen waarschuwing',
+    warn: { '1w': '1 week vooraf', '1m': '1 maand vooraf', '2m': '2 maanden vooraf', '3m': '3 maanden vooraf' },
+    warnHint: 'Een waarschuwing vervangt de herinnering van deze notitie.', save: 'Opslaan', takeOut: 'Uit de la halen', paperSaved: 'Bewaard in de Paper drawer', tookOut: 'Uit de Paper drawer gehaald',
+    expires: (d) => `Verloopt ${d}`, expired: (d) => `Verlopen ${d}`, tipClose: 'Deze tip sluiten',
+    intro: {
+      title: 'Je papierla', lead: 'Scan een brief, een polis of een paspoort en hij komt hier terecht.',
+      points: [
+        'De camera zoekt de randen van het papier en trekt het recht, zodat elke scan een nette PDF wordt.',
+        'Elk woord op het papier is doorzoekbaar. Typ een polisnummer en het papier komt tevoorschijn.',
+        'Staat er een vervaldatum op het papier, dan ziet JotDrop die en biedt aan je een week vooraf te herinneren.',
+      ],
+      phone: 'Scannen doe je met de JotDrop-app op je telefoon. Je scans verschijnen ook hier.',
     },
   },
 };
@@ -57,7 +78,8 @@ let drag = null;
 let dropCard = null;
 let swallowClick = false;
 const previews = new Map();
-const state = { cards: [], folders: [], boardFolder: '', query: '', folderId: '', tag: '', archive: false, found: null };
+// `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
+const state = { cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
 
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -89,6 +111,9 @@ const BELL = 'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.
 const BOX = 'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z';
 const UNBOX = 'M20.55 5.22l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.15.55L3.46 5.22C3.17 5.57 3 6.01 3 6.5V19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.49-.17-.93-.45-1.28zM12 9.5l5.5 5.5H14v2h-4v-2H6.5L12 9.5zM5.12 5l.82-1h12l.93 1H5.12z';
 const PENCIL = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
+// A paper tray for the Paper drawer; the box above already means the Archive here.
+const TRAY = 'M19 3H4.99C3.88 3 3.01 3.89 3.01 5L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5c0-1.11-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z';
+const PLUS = 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z';
 const LINK = 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z';
 
 async function post(message) {
@@ -145,10 +170,10 @@ async function load() {
   applyTheme();
   renderCloudButton(data.cloud);
   // Nothing changed for the board (our own write coming back, a note it does not show): cards stay put.
-  const same = JSON.stringify([data.cards, data.folders, data.boardFolder]);
+  const same = JSON.stringify([data.cards, data.folders, data.drawers, data.paperTipClosed, data.boardFolder]);
   if (same === lastData) return;
   lastData = same;
-  Object.assign(state, { cards: data.cards, folders: data.folders, boardFolder: data.boardFolder });
+  Object.assign(state, { cards: data.cards, folders: data.folders, drawers: data.drawers || [], paperTipClosed: !!data.paperTipClosed, boardFolder: data.boardFolder });
   if (state.query.trim()) runSearch();
   renderAll(false);
 }
@@ -205,6 +230,7 @@ function inFolder() {
 function visibleCards() {
   const q = state.query.trim().toLowerCase();
   return inFolder().filter((c) => (!state.tag || c.tags.includes(state.tag))
+    && (!state.paper || inDrawer(c.tags, state.paper))
     && (!q || (state.found && state.found.has(c.id)) || `${c.title}\n${(previews.get(c.id) || {}).body || ''}\n${c.tags.join(' ')}`.toLowerCase().includes(q)));
 }
 
@@ -407,7 +433,8 @@ function renderFolders() {
 
 function renderTags() {
   const counts = new Map();
-  for (const c of inFolder()) for (const tag of c.tags) counts.set(tag, (counts.get(tag) || 0) + 1);
+  // Drawers have their own chips below, so they are not #tags as well.
+  for (const c of inFolder()) for (const tag of c.tags) if (!isPaperDrawer(tag)) counts.set(tag, (counts.get(tag) || 0) + 1);
   const names = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([name]) => name);
   if (state.tag && !names.includes(state.tag)) names.push(state.tag);
   // The chosen chip carries a ✓ as well as its colour (colour-blind safe).
@@ -415,7 +442,120 @@ function renderTags() {
     const on = state.tag === value;
     return h('button', { type: 'button', class: 'jd-chip', 'aria-pressed': String(on), onclick: () => { state.tag = value; renderAll(true); } }, on ? '✓ ' : '', label);
   };
-  els.tags.replaceChildren(...(names.length ? [chip(t.allTags, ''), ...names.map((n) => chip(`#${n}`, n))] : []));
+  els.tags.replaceChildren(...paperChips(), ...(names.length ? [chip(t.allTags, ''), ...names.map((n) => chip(`#${n}`, n))] : []));
+}
+
+// ---- paper drawer ----
+
+const BASE = PAPER_DRAWER.toLowerCase();
+/** "paper drawer/work" as "Work"; Joplin keeps tags in lower case. */
+const drawerShown = (tag) => { const name = drawerName(tag); return name ? name[0].toUpperCase() + name.slice(1) : t.paperDrawer; };
+/** The note's drawer tag, or ''. */
+const paperOf = (c) => c.tags.find(isPaperDrawer) || '';
+
+// The Paper drawer is always there, also before the first paper, so people find it. Once open, its small drawers follow.
+function paperChips() {
+  const cards = inFolder();
+  const open = state.paper;
+  const count = (selected) => cards.filter((c) => inDrawer(c.tags, selected)).length;
+  const pick = (value) => () => { state.paper = value; renderAll(true); };
+  const chip = (text, on, go, extra = '', path = null, n = 0) => h('button', { type: 'button', class: `jd-chip jd-paper-chip${extra}`, 'aria-pressed': String(on),
+    onclick: (e) => { e.stopPropagation(); go(); } },
+  on ? '✓ ' : '', path ? icon(path) : null, text, n ? h('span', { class: 'jd-chip-count', text: String(n) }) : null);
+  const out = [chip(t.paperDrawer, open === BASE, pick(open ? '' : BASE), '', TRAY, count(BASE))];
+  if (!open) return out;
+  const small = [...new Set([...state.drawers, ...cards.flatMap((c) => c.tags.filter((tag) => drawerName(tag)))])]
+    .sort((a, b) => drawerName(a).localeCompare(drawerName(b)));
+  for (const tag of small) out.push(chip(drawerShown(tag), open === tag, pick(open === tag ? BASE : tag), ' is-small-drawer', null, count(tag)));
+  const add = chip(t.newDrawer, false, () => showNewDrawer(add), ' is-small-drawer', PLUS);
+  return [...out, add];
+}
+
+// The webview has no window.prompt, so the name is asked in a small menu.
+function showNewDrawer(anchor, onMade) {
+  closeMenu();
+  const input = h('input', { type: 'text', class: 'menu-time', placeholder: t.newDrawerPlaceholder, 'aria-label': t.newDrawerName });
+  const make = async () => {
+    if (!input.value.trim()) return input.focus();
+    closeMenu();
+    try {
+      const tag = await post({ type: 'newDrawer', name: input.value });
+      if (!state.drawers.includes(tag)) state.drawers.push(tag);
+      if (onMade) return onMade(tag);
+      state.paper = tag;
+      renderAll(true);
+    } catch { toast(t.failed); }
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); make(); } });
+  const menu = h('div', { class: 'card-menu', role: 'dialog', 'aria-label': t.newDrawerName },
+    h('label', { class: 'menu-pick' }, t.newDrawerName, input),
+    h('button', { type: 'button', class: 'menu-set', onclick: make }, t.create));
+  showMenu(menu, anchor);
+  input.focus();
+}
+
+// What the drawer does: in full while it is empty, as a closable tip above the papers.
+function paperIntro(tip) {
+  const box = h('section', { class: `jd-paper-intro${tip ? ' is-tip' : ''}` },
+    h('div', { class: 'jd-paper-intro-head' }, icon(TRAY), h(tip ? 'strong' : 'h2', { text: t.intro.title })),
+    tip ? null : h('p', { class: 'jd-paper-intro-lead', text: t.intro.lead }),
+    h('ul', {}, t.intro.points.map((text) => h('li', { text }))),
+    h('p', { class: 'jd-paper-intro-phone', text: t.intro.phone }));
+  if (tip) {
+    box.prepend(h('button', { type: 'button', class: 'jd-act jd-paper-intro-close', title: t.tipClose, 'aria-label': t.tipClose,
+      onclick: () => { state.paperTipClosed = true; box.remove(); post({ type: 'closePaperTip' }).catch(() => {}); } }, '✕'));
+  }
+  return box;
+}
+
+function dayShown(day) {
+  if (locale.startsWith('en')) return shortDate(day);
+  const [y, m, d] = day.split('-').map(Number);
+  try { return new Date(y, m - 1, d).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return shortDate(day); }
+}
+
+// The words say expired or not; the dashed border only adds emphasis (colour-blind safe).
+function expiresEl(c) {
+  const badge = expiresBadge(c.expires);
+  if (!badge) return null;
+  return h('p', { class: `card-reminder card-expires${badge.expired ? ' is-overdue' : ''}`, text: `📅 ${(badge.expired ? t.expired : t.expires)(dayShown(c.expires))}` });
+}
+
+function paperButton(c) {
+  const button = h('button', { type: 'button', class: 'jd-act', title: t.paperDrawer, 'aria-label': t.paperDrawer, 'aria-haspopup': 'dialog',
+    onclick: (e) => { e.stopPropagation(); showPaper(button, c); } }, icon(TRAY));
+  return button;
+}
+
+// Drawer, expiry date and warning for one note. A new date warns a week before unless changed; a date that is
+// already there keeps its reminder.
+function showPaper(anchor, c, drawerChoice) {
+  closeMenu();
+  const current = drawerChoice || paperOf(c) || BASE;
+  const drawers = [...new Set([BASE, ...state.drawers, current])].sort((a, b) => (a === BASE ? -1 : b === BASE ? 1 : drawerName(a).localeCompare(drawerName(b))));
+  const drawer = h('select', { class: 'menu-time', 'aria-label': t.drawer },
+    drawers.map((tag) => h('option', { value: tag, text: drawerShown(tag), selected: tag === current })),
+    h('option', { value: '+', text: `+ ${t.newDrawer}` }));
+  drawer.addEventListener('change', () => {
+    if (drawer.value !== '+') return;
+    showNewDrawer(anchor, (tag) => showPaper(anchor, c, tag));
+  });
+  const date = h('input', { type: 'date', class: 'menu-time', 'aria-label': t.expiresOn, value: c.expires || '' });
+  const warn = h('select', { class: 'menu-time', 'aria-label': t.warnMe },
+    h('option', { value: '', text: t.warnNone }),
+    WARN_OPTIONS.map((o) => h('option', { value: o.key, text: t.warn[o.key], selected: !c.expires && o.key === DEFAULT_WARN })));
+  const save = () => {
+    closeMenu();
+    update({ type: 'setPaper', id: c.id, drawer: drawer.value, expires: date.value, warn: warn.value }, t.paperSaved);
+  };
+  const menu = h('div', { class: 'card-menu menu-paper', role: 'dialog', 'aria-label': t.paperDrawer },
+    h('label', { class: 'menu-pick' }, t.drawer, drawer),
+    h('label', { class: 'menu-pick' }, t.expiresOn, date),
+    h('label', { class: 'menu-pick' }, t.warnMe, warn),
+    h('p', { class: 'menu-note', text: t.warnHint }),
+    h('button', { type: 'button', role: 'menuitem', class: 'menu-set', onclick: save }, t.save),
+    paperOf(c) || c.expires ? h('button', { type: 'button', role: 'menuitem', onclick: () => { closeMenu(); update({ type: 'setPaper', id: c.id, drawer: '' }, t.tookOut); } }, t.takeOut) : null);
+  showMenu(menu, anchor);
 }
 
 function columnCount() {
@@ -451,10 +591,14 @@ async function renderGrid(fromTop) {
   };
   boxes = { pinned: box(), others: box() };
   const parts = [];
+  // An empty drawer explains itself; a filled one shows a tip until it is closed.
+  const emptyDrawer = state.paper && !cards.length && !state.query.trim() && !state.tag && !state.archive;
+  if (emptyDrawer) parts.push(paperIntro(false));
+  else if (state.paper && cards.length && !state.paperTipClosed) parts.push(paperIntro(true));
   if (pinned.length) parts.push(h('h2', { class: 'jd-section', text: t.pinned }), boxes.pinned);
   if (pinned.length && others.length) parts.push(h('h2', { class: 'jd-section', text: t.others }));
   if (others.length) parts.push(boxes.others);
-  if (!cards.length) parts.push(h('p', { class: 'jd-empty', text: state.archive ? t.archiveEmpty : (state.cards.length ? t.noMatch : t.noNotes) }));
+  if (!cards.length && !emptyDrawer) parts.push(h('p', { class: 'jd-empty', text: state.archive ? t.archiveEmpty : (state.cards.length ? t.noMatch : t.noNotes) }));
   els.grid.replaceChildren(...parts);
   order = all;
   shown = 0;
@@ -510,9 +654,13 @@ function cardEl(c) {
       : task(c, line)))));
   }
   if (!c.title && !lines.length && !shownNote.image && !shownNote.audio) card.append(h('p', { class: 'jd-muted', text: t.empty }));
+  const expires = expiresEl(c);
+  if (expires) card.append(expires);
   if (c.isTodo && c.due) card.append(dueBadge(c));
   const chips = [
-    ...c.tags.map((tag) => h('span', { class: 'jd-tagchip', text: `#${tag}` })),
+    ...c.tags.map((tag) => (isPaperDrawer(tag)
+      ? h('span', { class: 'jd-tagchip jd-drawerchip' }, icon(TRAY), drawerShown(tag))
+      : h('span', { class: 'jd-tagchip', text: `#${tag}` }))),
     ...urls.map((url) => h('a', { class: 'link-chip', href: url, title: url,
       onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openUrl', url }).catch(() => toast(t.failed)); } }, icon(LINK), urlHost(url))),
   ];
@@ -520,7 +668,7 @@ function cardEl(c) {
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
       onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
-    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
+    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     post({ type: 'open', id: c.id }).catch(() => toast(t.failed));

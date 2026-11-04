@@ -32,7 +32,7 @@ if (differs) {
 }
 
 // src/cloud-shared/ holds whole copies of JotDrop's cloud code: they must match JotDrop main to the byte.
-const CLOUD_FILES = { 'client.mjs': 'cloud/shared/client.mjs', 'crypto.mjs': 'cloud/shared/crypto.mjs', 'merge.mjs': 'cloud/shared/merge.mjs', 'sync.mjs': 'cloud/shared/sync.mjs', 'note.mjs': 'cloud/web/note.mjs', 'drawing.mjs': 'cloud/shared/drawing.mjs', 'drawing-editor.mjs': 'cloud/shared/drawing-editor.mjs' };
+const CLOUD_FILES = { 'client.mjs': 'cloud/shared/client.mjs', 'crypto.mjs': 'cloud/shared/crypto.mjs', 'merge.mjs': 'cloud/shared/merge.mjs', 'sync.mjs': 'cloud/shared/sync.mjs', 'note.mjs': 'cloud/web/note.mjs', 'drawing.mjs': 'cloud/shared/drawing.mjs', 'drawing-editor.mjs': 'cloud/shared/drawing-editor.mjs', 'paper.mjs': 'cloud/shared/paper.mjs', 'expiry.mjs': 'cloud/shared/expiry.mjs' };
 let stale = 0;
 for (const [file, path] of Object.entries(CLOUD_FILES)) {
   const url = `https://raw.githubusercontent.com/Diexar-Labs/jotdrop/main/${path}`;
