@@ -1,6 +1,7 @@
 import joplin from 'api';
 import { MenuItemLocation, ModelType, SettingItemType, ToolbarButtonLocation } from 'api/types';
-import { cloudStatus, openCloud, registerCloudSettings, startCloud } from './cloudInbox';
+import { cloudStatus, credentials, openCloud, registerCloudSettings, startCloud } from './cloudInbox';
+import { endLink, hasListLink, makeLink, setupShareLinks, shareInfo } from './shareLinks';
 import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
 import { boardRank } from './board/order.js';
@@ -125,6 +126,7 @@ function toMeta(note: any, tags: string[], editedToTop: boolean) {
 		archived: meta.archived === true,
 		color: COLORS.has(String(meta.color)) ? String(meta.color) : 'default',
 		expires: validExpires(meta.expires),
+		listLink: hasListLink(note.id),
 		tags,
 	};
 }
@@ -232,6 +234,14 @@ async function toggleTask(id: string, line: number, checked: boolean) {
 	lines[line] = lines[line].replace(/^(\s*[-*+] \[)[ xX](\] )/, `$1${checked ? 'x' : ' '}$2`);
 	await joplin.data.put(['notes', id], null, { body: lines.join('\n'), ...await keepEditTime(id) });
 	return cardFor(id);
+}
+
+// Guests' ticks from a live list link: written only when the note has not changed since it was read, and the card stays put.
+async function writeListNote(id: string, body: string, updatedTime: number) {
+	const note = await joplin.data.get(['notes', id], { fields: ['updated_time', 'deleted_time'] });
+	if (Number(note.updated_time) !== updatedTime || note.deleted_time) return false;
+	await joplin.data.put(['notes', id], null, { body, ...await keepEditTime(id) });
+	return true;
 }
 
 function base64(bytes: Uint8Array) {
@@ -346,6 +356,10 @@ async function answer(message: any) {
 	case 'setPaper': return setPaper(message.id, String(message.drawer || ''), String(message.expires || ''), String(message.warn || ''));
 	case 'newDrawer': return newDrawer(message.name);
 	case 'closePaperTip': await joplin.settings.setValue('paperTipClosed', true); return true;
+	case 'shareInfo': return platform === 'desktop' ? shareInfo(String(message.id)) : { connected: false };
+	case 'makeLink': return makeLink(String(message.id), message.kind === 'list' ? 'list' : 'copy', [1, 7, 30, 0].includes(Number(message.days)) ? Number(message.days) : 7);
+	case 'endLink': return endLink(String(message.linkId), message.kind === 'list' ? 'list' : 'copy');
+	case 'copy': await joplin.clipboard.writeText(String(message.text || '')); return true;
 	}
 	return null;
 }
@@ -478,6 +492,7 @@ joplin.plugins.register({
 		setInterval(() => { pollChanges().catch(() => { cursor = null; }); }, 3000);
 		if (platform === 'desktop') {
 			await registerCloudSettings();
+			setupShareLinks(credentials, writeListNote);
 			startCloud(boardFolderForNewBoard, notifyBoards);
 		}
 

@@ -4,10 +4,12 @@ import { CloudClient, CloudError } from './cloud-shared/client.mjs';
 import { noteSummary } from './cloud-shared/note.mjs';
 import { validExpires } from './cloud-shared/paper.mjs';
 import { remoteFiles } from './cloud-shared/sync.mjs';
+import { checkListLinks, forgetListLinks } from './shareLinks';
 import { baseline, createdTime, followMoves, isCloudNote, linkAttachments, stableId, titleAndBody, wantedTags } from './cloudNote.mjs';
 
 // JotDrop Cloud on Joplin desktop, one way: what the JotDrop app puts in the cloud becomes ordinary Joplin notes
-// in the notebook JotDrop. Nothing goes back, and a note edited or removed in Joplin is left alone.
+// in the notebook JotDrop. Nothing goes back, and a note edited or removed in Joplin is left alone. The one exception
+// is a note you share by link yourself (shareLinks.ts): only that note goes up, sealed, and the same check keeps it in step.
 // Desktop only: a plugin can only write attachments on desktop, and Joplin's own sync brings the notes to the phone.
 
 const COLORS = new Set(['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray']);
@@ -124,7 +126,7 @@ export async function registerCloudSettings() {
 	});
 }
 
-const credentials = async () => {
+export const credentials = async () => {
 	const stored = String(await joplin.settings.value('cloudCredentials') || '');
 	return stored ? JSON.parse(stored) : null;
 };
@@ -309,7 +311,13 @@ export function startCloud(inbox: () => Promise<string>, changed: () => Promise<
 		if (running || stopping || Date.now() < nextCheck || !(await credentials())) return;
 		try {
 			const result = await pullCloud();
-			if (result.added || result.updated) await changed();
+			let notesChanged = !!(result.added || result.updated);
+			try {
+				if (await checkListLinks()) notesChanged = true;
+			} catch (error) {
+				console.warn('JotDrop list links:', error);
+			}
+			if (notesChanged) await changed();
 			if (result.failed) failures++;
 		} catch (error) {
 			failures++;
@@ -393,6 +401,7 @@ async function disconnect(t: Text) {
 	const stored = await credentials();
 	if (stored) await new CloudClient(stored).revokeDevice(stored.deviceId).catch((error) => { reached = error?.status === 401; });
 	await joplin.settings.setValue('cloudCredentials', '');
+	forgetListLinks();
 	stopping = false;
 	Object.assign(status, { done: 0, total: 0, problem: '', brought: 0, lastCheck: 0 });
 	return reached ? t.disconnected : t.disconnectedOffline;

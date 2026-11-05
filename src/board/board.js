@@ -25,6 +25,15 @@ const STRINGS = {
     warnHint: 'A warning replaces this note\'s reminder.', save: 'Save', takeOut: 'Take out of the drawer', paperSaved: 'Saved in the paper drawer', tookOut: 'Taken out of the paper drawer',
     expires: (d) => `Expires ${d}`, expired: (d) => `Expired ${d}`, tipClose: 'Close this tip', toTop: 'Back to the top',
     intro: { title: INTRO.title, lead: INTRO.lead, points: INTRO.points.map((p) => p.text), phone: INTRO.phone },
+    share: 'Share by link', loading: 'Loading…', shareKind: 'Share', copyKind: 'Send a copy (read only)', listKind: 'Share a live list (people can tick items)', noChecklist: 'This note has no checklist.',
+    explainCopy: 'Anyone with the link can read a copy of this note\'s text, without an account. Photos and other attachments stay behind. Later changes to the note are not in the copy.',
+    explainList: 'Anyone with the link can tick items and add items, without an account, and gives a name so you see who did what. Their ticks come into this note while Joplin is open on this computer, and what you tick goes to the list. Photos and other attachments stay behind.',
+    worksFor: 'Link works for', days: { 1: '1 day', 7: '7 days', 30: '30 days', 0: 'Until I remove it' }, make: 'Make link', making: 'Encrypting and sending…',
+    made: 'Send this link yourself. It holds the key, so we never see it.', linkField: 'Link', copy: 'Copy', copied: 'Link copied.',
+    yourLinks: 'Your links', remove: 'Remove', endLink: 'End link', gone: 'The link no longer works.', untitled: 'Untitled note',
+    ends: (d) => `Ends ${d}`, untilRemoved: 'Until you remove it', live: (ends, updated) => `Live list, ${ends ? `ends ${ends}` : 'until you end it'}, updated ${updated}`, notHere: 'note not found in this Joplin',
+    ticked: (by, item) => `✓ ${by} ticked "${item}"`, addedItem: (by, item) => `${by} added "${item}"`, justNow: 'just now', minAgo: (n) => `${n} min. ago`, hrAgo: (n) => `${n} hr. ago`,
+    connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
   },
   nl: {
     search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
@@ -57,6 +66,15 @@ const STRINGS = {
       ],
       phone: 'Scannen doe je met de JotDrop-app op je telefoon. Je scans verschijnen ook hier.',
     },
+    share: 'Delen via link', loading: 'Laden…', shareKind: 'Delen', copyKind: 'Een kopie sturen (alleen lezen)', listKind: 'Een live lijst delen (anderen kunnen afvinken)', noChecklist: 'Deze notitie heeft geen checklist.',
+    explainCopy: 'Iedereen met de link kan een kopie van de tekst van deze notitie lezen, zonder account. Foto\'s en andere bijlagen blijven achter. Latere wijzigingen in de notitie staan niet in de kopie.',
+    explainList: 'Iedereen met de link kan zonder account afvinken en iets toevoegen, en geeft een naam op zodat je ziet wie wat deed. Hun vinkjes komen in deze notitie zolang Joplin op deze computer openstaat, en wat jij afvinkt gaat naar de lijst. Foto\'s en andere bijlagen blijven achter.',
+    worksFor: 'Link werkt', days: { 1: '1 dag', 7: '7 dagen', 30: '30 dagen', 0: 'Tot ik hem weghaal' }, make: 'Link maken', making: 'Versleutelen en versturen…',
+    made: 'Stuur deze link zelf door. De sleutel zit in de link, dus wij zien hem nooit.', linkField: 'Link', copy: 'Kopiëren', copied: 'Link gekopieerd.',
+    yourLinks: 'Je links', remove: 'Weghalen', endLink: 'Link stoppen', gone: 'De link werkt niet meer.', untitled: 'Notitie zonder titel',
+    ends: (d) => `Stopt ${d}`, untilRemoved: 'Tot je hem weghaalt', live: (ends, updated) => `Live lijst, ${ends ? `stopt ${ends}` : 'tot je hem stopt'}, bijgewerkt ${updated}`, notHere: 'notitie niet gevonden in deze Joplin',
+    ticked: (by, item) => `✓ ${by} vinkte "${item}" af`, addedItem: (by, item) => `${by} voegde "${item}" toe`, justNow: 'zojuist', minAgo: (n) => `${n} min. geleden`, hrAgo: (n) => `${n} uur geleden`,
+    connectFirst: 'Koppel eerst JotDrop Cloud. Daarna kun je een notitie via een link delen.', plusSite: 'JotDrop Plus op de website', liveBadge: 'Live lijstlink',
   },
 };
 
@@ -81,7 +99,7 @@ let swallowClick = false;
 let restore = null;
 const previews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
-const state = { cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
+const state = { cloud: null, cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
 
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -116,6 +134,7 @@ const PENCIL = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0
 // A paper tray for the Paper drawer; the box above already means the Archive here.
 const TRAY = 'M19 3H4.99C3.88 3 3.01 3.89 3.01 5L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5c0-1.11-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z';
 const PLUS = 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z';
+const SHARE = 'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z';
 const LINK = 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z';
 
 async function post(message) {
@@ -176,6 +195,7 @@ async function load() {
     buildShell();
   }
   applyTheme();
+  state.cloud = data.cloud;
   renderCloudButton(data.cloud);
   // Nothing changed for the board (our own write coming back, a note it does not show): cards stay put.
   const same = JSON.stringify([data.cards, data.folders, data.drawers, data.paperTipClosed, data.boardFolder]);
@@ -680,6 +700,8 @@ function cardEl(c) {
   const expires = expiresEl(c);
   if (expires) card.append(expires);
   if (c.isTodo && c.due) card.append(dueBadge(c));
+  // A word, not only an icon or a colour (colour-blind safe), like the website's mark.
+  if (c.listLink) card.append(h('p', { class: 'card-reminder card-listlink', text: `🔗 ${t.liveBadge}` }));
   const chips = [
     ...c.tags.map((tag) => (isPaperDrawer(tag)
       ? h('span', { class: 'jd-tagchip jd-drawerchip' }, icon(TRAY), drawerShown(tag))
@@ -691,7 +713,7 @@ function cardEl(c) {
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
       onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
-    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
+    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     openCard(c.id);
@@ -797,11 +819,15 @@ function showReminders(anchor, c) {
 function showMenu(menu, anchor) {
   menu.addEventListener('click', (e) => e.stopPropagation());
   document.body.append(menu);
+  placeMenu(menu, anchor);
+  openMenu = menu;
+}
+
+function placeMenu(menu, anchor) {
   const r = anchor.getBoundingClientRect();
   menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8))}px`;
   const below = r.bottom + 4;
   menu.style.top = `${below + menu.offsetHeight > window.innerHeight ? Math.max(8, r.top - menu.offsetHeight - 4) : below}px`;
-  openMenu = menu;
 }
 
 function showColors(anchor, c) {
@@ -819,6 +845,116 @@ function showColors(anchor, c) {
 function closeMenu() {
   if (openMenu) openMenu.remove();
   openMenu = null;
+}
+
+// ---- sharing by link (Joplin desktop with JotDrop Cloud) ----
+
+function shareButton(c) {
+  if (document.documentElement.dataset.platform !== 'desktop') return null;
+  const button = h('button', { type: 'button', class: 'jd-act', title: t.share, 'aria-label': t.share, 'aria-haspopup': 'dialog',
+    onclick: (e) => { e.stopPropagation(); showShare(button, c); } }, icon(SHARE));
+  return button;
+}
+
+function ago(iso) {
+  const seconds = Math.round((Date.now() - Date.parse(iso || '')) / 1000);
+  if (!Number.isFinite(seconds)) return '';
+  if (seconds < 60) return t.justNow;
+  if (seconds < 3600) return t.minAgo(Math.floor(seconds / 60));
+  if (seconds < 86400) return t.hrAgo(Math.floor(seconds / 3600));
+  return dateShown(iso);
+}
+
+function dateShown(iso) {
+  try { return new Date(iso).toLocaleDateString(locale); } catch { return new Date(iso).toLocaleDateString(); }
+}
+
+async function copyLink(address) {
+  try { await post({ type: 'copy', text: address }); toast(t.copied); } catch { toast(t.failed); }
+}
+
+// A copy anyone can read, or a live list anyone can tick: the same choice as on the website and in Obsidian.
+async function showShare(anchor, c) {
+  closeMenu();
+  const menu = h('div', { class: 'card-menu menu-share', role: 'dialog', 'aria-label': t.share }, h('p', { class: 'menu-note', text: t.loading }));
+  showMenu(menu, anchor);
+  let info;
+  try { info = await post({ type: 'shareInfo', id: c.id }); } catch { if (openMenu === menu) closeMenu(); toast(t.failed); return; }
+  if (openMenu !== menu) return;
+  menu.replaceChildren();
+  if (!info.connected) {
+    menu.append(h('p', { class: 'menu-note', text: t.connectFirst }),
+      h('button', { type: 'button', class: 'menu-set', onclick: () => { closeMenu(); els.cloud.click(); } }, t.cloudOff));
+    placeMenu(menu, anchor);
+    return;
+  }
+  const kind = h('select', { class: 'menu-time', 'aria-label': t.shareKind },
+    h('option', { value: 'copy', text: t.copyKind }),
+    info.checklist ? h('option', { value: 'list', text: t.listKind }) : null);
+  const explain = h('p', { class: 'menu-note' });
+  const explained = () => { explain.textContent = kind.value === 'list' ? t.explainList : t.explainCopy; };
+  kind.addEventListener('change', explained);
+  explained();
+  const days = h('select', { class: 'menu-time', 'aria-label': t.worksFor },
+    [1, 7, 30, 0].map((n) => h('option', { value: String(n), text: t.days[n], selected: n === 7 })));
+  const message = h('p', { class: 'menu-note', role: 'status' });
+  const made = h('div', { class: 'menu-made' });
+  const links = h('div', { class: 'menu-links' });
+  const make = h('button', { type: 'button', class: 'menu-set', onclick: async () => {
+    make.disabled = true;
+    message.textContent = t.making;
+    made.replaceChildren();
+    try {
+      const result = await post({ type: 'makeLink', id: c.id, kind: kind.value, days: Number(days.value) });
+      if (result.problem) {
+        message.textContent = result.problem;
+        if (result.plusUrl) message.append(' ', h('button', { type: 'button', class: 'menu-inline', onclick: () => post({ type: 'openUrl', url: result.plusUrl }).catch(() => toast(t.failed)) }, t.plusSite));
+        return;
+      }
+      const field = h('input', { type: 'text', class: 'menu-time menu-field', readonly: true, 'aria-label': t.linkField, value: result.address });
+      made.append(field, h('button', { type: 'button', class: 'menu-set', onclick: () => copyLink(result.address) }, t.copy));
+      message.textContent = t.made;
+      if (kind.value === 'list') { c.listLink = true; scheduleReload(); }
+      await showLinks(links, message, anchor);
+    } catch { message.textContent = t.failed; } finally { make.disabled = false; if (openMenu === menu) placeMenu(menu, anchor); }
+  } }, t.make);
+  menu.append(
+    h('label', { class: 'menu-pick' }, t.shareKind, kind),
+    info.checklist ? null : h('p', { class: 'menu-note', text: t.noChecklist }),
+    explain,
+    h('label', { class: 'menu-pick' }, t.worksFor, days),
+    make, message, made, links);
+  renderLinks(links, info, message, anchor);
+  placeMenu(menu, anchor);
+}
+
+async function showLinks(el, message, anchor) {
+  const info = await post({ type: 'shareInfo', id: '' }).catch(() => null);
+  if (info && info.connected) renderLinks(el, info, message, anchor);
+}
+
+// Your links on every device: copies with Copy and Remove, live lists with who ticked or added what.
+function renderLinks(el, info, message, anchor) {
+  el.replaceChildren();
+  if (!info.links.length && !info.lists.length) return;
+  const end = (link, kind) => async () => {
+    try { await post({ type: 'endLink', linkId: link.id, kind }); message.textContent = t.gone; } catch { message.textContent = t.failed; }
+    if (kind === 'list') scheduleReload();
+    await showLinks(el, message, anchor);
+    if (openMenu) placeMenu(openMenu, anchor);
+  };
+  const row = (title, lines, link, kind) => h('div', { class: 'menu-link' },
+    h('strong', { text: title || t.untitled }),
+    lines.map((line) => h('span', { text: line })),
+    h('div', { class: 'menu-link-buttons' },
+      link.address ? h('button', { type: 'button', onclick: () => copyLink(link.address) }, t.copy) : null,
+      h('button', { type: 'button', onclick: end(link, kind) }, kind === 'list' ? t.endLink : t.remove)));
+  el.append(h('h4', { class: 'menu-heading', text: t.yourLinks }),
+    info.links.map((link) => row(link.title, [link.expiresAt ? t.ends(dateShown(link.expiresAt)) : t.untilRemoved], link, 'copy')),
+    info.lists.map((link) => row(link.title, [
+      `${t.live(link.expiresAt ? dateShown(link.expiresAt) : '', ago(link.updatedAt))}${link.here === false ? ` - ${t.notHere}` : ''}`,
+      ...link.marks.map((mark) => `${(mark.added ? t.addedItem : t.ticked)(mark.by, mark.text)}, ${ago(new Date(mark.at).toISOString())}`),
+    ], link, 'list')));
 }
 
 // ---- dragging ----

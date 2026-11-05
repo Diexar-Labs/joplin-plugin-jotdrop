@@ -158,3 +158,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card-expires { margin-right: 4px; }
 .menu-paper { min-width: 240px; }
 .menu-paper .menu-pick:first-child { margin-top: 0; border-top: 0; }
+.menu-share { width: 330px; }
+.menu-share .menu-note { max-width: none; }
+.menu-share .menu-pick:first-child { margin-top: 0; border-top: 0; }
+.menu-share .menu-time { width: 100%; box-sizing: border-box; }
+.menu-made { display: flex; flex-direction: column; gap: 4px; padding: 0 10px; }
+.menu-field { font-size: .8rem; }
+.menu-heading { margin: 6px 0 0; padding: 7px 10px 2px; border-top: 1px solid var(--line); font-size: .85rem; }
+.menu-link { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; font-size: .8rem; }
+.menu-link span { color: var(--muted); }
+.card-menu .menu-link-buttons { display: flex; gap: 6px; }
+.card-menu .menu-link-buttons button, .card-menu .menu-inline { width: auto; padding: 3px 8px; border: 1px solid var(--line); font-size: .8rem; }
+.card-menu .menu-inline { display: inline; }
