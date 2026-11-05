@@ -11,7 +11,7 @@ Every note you already have becomes a card you can pin, color, drag and tick off
 Nothing to convert. No account needed. Your notes stay in Joplin.<br/>
 Want to capture on the go? Notes from the **JotDrop app** can land on your board through **JotDrop Cloud**.
 
-[**Get it**](#get-jotdrop-for-joplin) · [**Features**](#features) · [**On your phone**](#on-your-phone) · [**From the JotDrop app**](#from-the-jotdrop-app-into-joplin) · [**How it works**](#how-it-works) · [**JotDrop app and Cloud**](#the-rest-of-jotdrop-android-app-and-jotdrop-cloud) · [**FAQ**](#faq) · [**jotdrop.net**](https://jotdrop.net/)
+[**Get it**](#get-jotdrop-for-joplin) · [**Features**](#features) · [**On your phone**](#on-your-phone) · [**From the JotDrop app**](#from-the-jotdrop-app-into-joplin) · [**Share by link**](#share-a-note-by-link) · [**How it works**](#how-it-works) · [**JotDrop app and Cloud**](#the-rest-of-jotdrop-android-app-and-jotdrop-cloud) · [**FAQ**](#faq) · [**jotdrop.net**](https://jotdrop.net/)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-f4c458.svg)](LICENSE) [![Joplin plugin](https://img.shields.io/badge/Joplin-plugin-14213d)](#get-jotdrop-for-joplin) [![npm](https://img.shields.io/npm/v/joplin-plugin-jotdrop?color=14213d&label=npm)](https://www.npmjs.com/package/joplin-plugin-jotdrop) [![Platforms](https://img.shields.io/badge/Desktop%20%2B%20Android-14213d)](#get-jotdrop-for-joplin)
 
@@ -19,7 +19,7 @@ Want to capture on the go? Notes from the **JotDrop app** can land on your board
 
 > ### Free. No account needed. The cloud is your choice.
 >
-> JotDrop for Joplin costs nothing and needs no sign-up. It adds a board to the Joplin you already use, and your notes keep using Joplin's own sync, whichever sync target you chose. It only talks to the internet if you connect JotDrop Cloud yourself, to bring in notes from the JotDrop app.
+> JotDrop for Joplin costs nothing and needs no sign-up. It adds a board to the Joplin you already use, and your notes keep using Joplin's own sync, whichever sync target you chose. It only talks to the internet if you connect JotDrop Cloud yourself, to bring in notes from the JotDrop app or to share a note by link.
 
 ---
 
@@ -82,6 +82,7 @@ Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins
 - **Take a note.** A note bar at the top of the board, like in Keep.
 - **Tick checklists on the card.** ☐ becomes ☑, and your note is updated.
 - **Reminders.** Pick later today, tomorrow, next week or your own moment. JotDrop uses Joplin's own to-do alarm, so the reminder also works without the board.
+- **Share by link.** Send someone a read-only copy of a note, or a shopping list they can tick off in their browser. Needs JotDrop Cloud on Joplin desktop. [More below](#share-a-note-by-link).
 
 ### Find
 
@@ -161,13 +162,33 @@ The button then shows **✓ Cloud**. Click it to see how it is going, to check r
 
 **Good to know**
 
-- **It goes one way.** Notes you make in Joplin do not go to the JotDrop app.
+- **It goes one way.** Notes you make in Joplin do not go to the JotDrop app. The one exception is a note you [share by link](#share-a-note-by-link) yourself.
 - **Desktop does the fetching, while Joplin is open.** It looks every 30 seconds. Notes made while Joplin is closed come in after you open it. On Joplin for Android you see them through Joplin's own sync; connecting from Android itself is not possible.
 - **Connect one computer.** Joplin's own sync takes the notes to your other devices. A second connected computer makes no duplicate notes, but if both bring in the same photo before they sync, Joplin can add a note called "Attachment conflict".
 - **Encryption ends at your Joplin.** On the way through JotDrop Cloud a note is end-to-end encrypted. Once it is a Joplin note, Joplin's settings apply: its own end-to-end encryption is optional and off by default, so turn it on if your sync target should not read your notes.
 - **Joplin counts as a device.** The free plan has 2: your phone and one Joplin. Attachments follow your plan's file size. See [the plans](#jotdrop-cloud).
 - **Repeating reminders** come in with their first date only.
 - **Archive and trash** in the app stay out of Joplin.
+
+## Share a note by link
+
+On Joplin desktop with JotDrop Cloud connected, every card has a **Share by link** button. You get two choices:
+
+- **Send a copy (read only).** Anyone with the link can read the note's text in a browser, without an account. Photos and other attachments stay behind, and later changes to the note are not in the copy.
+- **Share a live list.** This one is for a note with a checklist. Anyone with the link can tick items and add items, without an account, and types a name so you see who did what. Their ticks come into your Joplin note, and what you tick goes to the list. The card then says **Live list link**.
+
+Choose how long the link works, click **Make link** and send the link yourself. Under **Your links** you can copy a link again, see who ticked or added what, and end a link.
+
+**Good to know**
+
+- **The key is in the link.** The note is encrypted on your computer before it goes to JotDrop Cloud. The key is only in the part of the link after the #, and browsers never send that part to the server, so the server cannot read the note. Anyone who has the link can, including people they pass it on to.
+- **A name is not proof.** A guest can type any name.
+- **Only the note you share goes to the cloud.** Your other Joplin notes stay out of it.
+- **A live list keeps up while Joplin desktop is open.** It checks every 30 seconds. Guests can tick while Joplin is closed, and their ticks come into the note once you open it again. On Joplin for Android you tick in the note as usual: Joplin's sync takes that to your desktop, and the desktop passes it on to the list.
+- **Move the note to the trash and its live list link ends.** You can also end a link yourself under **Your links**.
+- **What someone saw stays seen.** An ended link no longer opens, but you cannot take back what a guest already read or copied.
+- **Free plan:** one link at a time, for 7 days. **Plus:** up to 100 links, for 1, 7 or 30 days or until you remove it.
+- **A live list made in Joplin stays with Joplin.** The JotDrop app and the web app show it under your links, but only Joplin desktop keeps it in step with the note.
 
 ## How it works
 
@@ -178,7 +199,7 @@ JotDrop for Joplin is deliberately simple plumbing:
 - **Ticking a box or writing a quick note** does change your note, because that is what you asked for. It stays a normal Joplin note.
 - **A reminder** is the one thing that changes how a note behaves in Joplin. Joplin only has alarms for to-dos, so a plain note becomes a to-do when you set one. Remove the reminder and it is a plain note again.
 - **Everything on your computer goes through Joplin's plugin API.** Without JotDrop Cloud the plugin makes no network requests and needs no account.
-- **With JotDrop Cloud connected,** Joplin desktop asks the cloud for new notes every 30 seconds. It decrypts them on your computer with a key the server never sees. Its data about what came in stays in the plugin's own folder, and nothing is ever sent back.
+- **With JotDrop Cloud connected,** Joplin desktop asks the cloud for new notes every 30 seconds. It decrypts them on your computer with a key the server never sees. Its data about what came in stays in the plugin's own folder. Nothing goes back to the cloud, except a note you share by link yourself.
 
 Uninstall the plugin and your notes are still your Joplin notes. Only the board note and its notebook stay behind, and you can delete those.
 
@@ -223,7 +244,7 @@ The optional, end-to-end encrypted sync for the JotDrop app, the Obsidian plugin
 
 Current prices are on the [JotDrop pricing page](https://jotdrop.net/#pricing). The free plan needs no payment details. All of it is explained in the [JotDrop repository](https://github.com/Diexar-Labs/jotdrop#jotdrop-cloud).
 
-**Joplin users:** your Joplin notes do not go to JotDrop Cloud. Notes only travel from the cloud into Joplin, and Joplin's own sync keeps doing the rest. Want to move notes to JotDrop instead? Export them from Joplin as Markdown with resources (not JEX) and import them in JotDrop.
+**Joplin users:** your Joplin notes do not go to JotDrop Cloud, unless you [share one by link](#share-a-note-by-link). Notes from the app only travel from the cloud into Joplin, and Joplin's own sync keeps doing the rest. Want to move notes to JotDrop instead? Export them from Joplin as Markdown with resources (not JEX) and import them in JotDrop.
 
 ## FAQ
 
@@ -240,10 +261,13 @@ It sits on top of Joplin's own sync, so it follows whichever target you use. We 
 That is up to your Joplin settings. Joplin's end-to-end encryption is optional and off by default. Turn it on in Joplin and the plugin data travels with it.
 
 **Do I need a JotDrop account or JotDrop Cloud?**
-Not for the board. Without JotDrop Cloud the plugin has no account, no server and no network requests of its own. You only need the cloud to bring in notes from the JotDrop app, and the free plan is enough for a phone and one Joplin.
+Not for the board. Without JotDrop Cloud the plugin has no account, no server and no network requests of its own. You only need the cloud to bring in notes from the JotDrop app or to share a note by link, and the free plan is enough for a phone and one Joplin.
 
 **Can notes from the JotDrop app appear in Joplin?**
 Yes. [Connect JotDrop Cloud](#from-the-jotdrop-app-into-joplin) on Joplin desktop and they come in as ordinary notes. It goes one way, and whatever you changed in Joplin stays as you left it.
+
+**Can I share a note with someone who doesn't use Joplin?**
+Yes, on Joplin desktop with JotDrop Cloud connected. [Share it by link](#share-a-note-by-link) as a read-only copy, or as a live list they can tick off in any browser.
 
 **Are notes from JotDrop Cloud still encrypted in Joplin?**
 On the way, yes, end to end. In Joplin they are normal notes, so Joplin's own encryption setting applies.

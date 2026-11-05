@@ -58,9 +58,12 @@ async function client() {
 
 const getNote = async (id: string) => joplin.data.get(['notes', id], { fields: ['id', 'title', 'body', 'updated_time', 'deleted_time'] }).catch(() => null);
 
+// An ended link stays on the server (Plus can bring it back), but there is nothing to keep in step.
+const live = (link: ListLink) => !link.expiresAt || Date.parse(link.expiresAt) > Date.now();
+
 function remember(found: ListLink[]) {
 	lists = found;
-	linked = new Set(found.map((link) => noteIdOf(link.path)).filter((id): id is string => !!id));
+	linked = new Set(found.filter(live).map((link) => noteIdOf(link.path)).filter((id): id is string => !!id));
 }
 
 /** One look at your list links; true when a note changed. One check at a time, and a link that fails never stops the others. */
@@ -69,9 +72,11 @@ export function checkListLinks(): Promise<boolean> {
 		const cloud = await client();
 		if (!cloud) { remember([]); return false; }
 		const found: ListLink[] = await listListLinks(cloud);
+		const before = [...linked].sort().join();
 		remember(found);
-		let changed = false;
-		for (const link of found) {
+		// A link made or ended on another computer changes the mark on a card.
+		let changed = [...linked].sort().join() !== before;
+		for (const link of found.filter(live)) {
 			try {
 				const result = await checkLink(cloud, link, {
 					getNote,
@@ -132,7 +137,7 @@ export async function makeLink(id: string, kind: string, days: number) {
 		const link = await createLink(cloud, { title: title || t.untitled, text: copyText(body) }, { origin: cloud.credentials.url, days });
 		return { address: link.address };
 	} catch (error) {
-		console.warn('JotDrop link:', error);
+		if ((error as any)?.code !== 'plus-required') console.warn('JotDrop link:', error);
 		return problem(error, t, cloud.credentials.url);
 	}
 }

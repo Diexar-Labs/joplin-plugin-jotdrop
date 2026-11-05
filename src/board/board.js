@@ -918,12 +918,12 @@ async function showShare(anchor, c) {
       await showLinks(links, message, anchor);
     } catch { message.textContent = t.failed; } finally { make.disabled = false; if (openMenu === menu) placeMenu(menu, anchor); }
   } }, t.make);
-  menu.append(
+  menu.append(...[
     h('label', { class: 'menu-pick' }, t.shareKind, kind),
     info.checklist ? null : h('p', { class: 'menu-note', text: t.noChecklist }),
     explain,
     h('label', { class: 'menu-pick' }, t.worksFor, days),
-    make, message, made, links);
+    make, message, made, links].filter(Boolean));
   renderLinks(links, info, message, anchor);
   placeMenu(menu, anchor);
 }
@@ -950,8 +950,8 @@ function renderLinks(el, info, message, anchor) {
       link.address ? h('button', { type: 'button', onclick: () => copyLink(link.address) }, t.copy) : null,
       h('button', { type: 'button', onclick: end(link, kind) }, kind === 'list' ? t.endLink : t.remove)));
   el.append(h('h4', { class: 'menu-heading', text: t.yourLinks }),
-    info.links.map((link) => row(link.title, [link.expiresAt ? t.ends(dateShown(link.expiresAt)) : t.untilRemoved], link, 'copy')),
-    info.lists.map((link) => row(link.title, [
+    ...info.links.map((link) => row(link.title, [link.expiresAt ? t.ends(dateShown(link.expiresAt)) : t.untilRemoved], link, 'copy')),
+    ...info.lists.map((link) => row(link.title, [
       `${t.live(link.expiresAt ? dateShown(link.expiresAt) : '', ago(link.updatedAt))}${link.here === false ? ` - ${t.notHere}` : ''}`,
       ...link.marks.map((mark) => `${(mark.added ? t.addedItem : t.ticked)(mark.by, mark.text)}, ${ago(new Date(mark.at).toISOString())}`),
     ], link, 'list')));
