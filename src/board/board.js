@@ -77,6 +77,8 @@ let boxes = {};
 let drag = null;
 let dropCard = null;
 let swallowClick = false;
+// Where to land when the board comes back from a note: { y, shown }, used once by the first render.
+let restore = null;
 const previews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
 const state = { cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
@@ -162,6 +164,7 @@ async function load() {
     return;
   }
   if (!els) {
+    if (data.scroll && data.scroll.y > 0) restore = data.scroll;
     t = STRINGS[String(data.locale).slice(0, 2)] || STRINGS.en;
     locale = String(data.locale).replace('_', '-');
     document.documentElement.dataset.platform = data.platform;
@@ -573,7 +576,7 @@ async function renderGrid(fromTop) {
   const others = sortCards(cards.filter((c) => !c.pinned));
   const all = [...pinned, ...others];
   els.count.textContent = t.notes(cards.length);
-  const count = fromTop ? Math.min(PAGE, all.length) : Math.min(Math.max(PAGE, shown), all.length);
+  const count = fromTop ? Math.min(PAGE, all.length) : Math.min(Math.max(PAGE, shown, restore ? restore.shown : 0), all.length);
   try {
     await ensurePreviews(all.slice(0, count));
   } catch {
@@ -603,7 +606,8 @@ async function renderGrid(fromTop) {
   order = all;
   shown = 0;
   place(count);
-  scroller.scrollTop = fromTop ? 0 : y;
+  scroller.scrollTop = restore ? restore.y : (fromTop ? 0 : y);
+  restore = null;
   loadMore();
 }
 
@@ -671,12 +675,20 @@ function cardEl(c) {
     h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
-    post({ type: 'open', id: c.id }).catch(() => toast(t.failed));
+    openCard(c.id);
   });
   card.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target === card) post({ type: 'open', id: c.id }).catch(() => toast(t.failed));
+    if (e.key === 'Enter' && e.target === card) openCard(c.id);
   });
   return card;
+}
+
+// The board remembers where it was, so coming back from the note lands on the same card. A filter or search is
+// not kept when the board reopens, so only the plain board's place is worth remembering.
+function openCard(id) {
+  const plain = !state.query.trim() && !state.folderId && !state.tag && !state.paper && !state.archive;
+  const y = plain ? (document.scrollingElement || document.documentElement).scrollTop : 0;
+  post({ type: 'open', id, y, shown }).catch(() => toast(t.failed));
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { planMove, sortCards } from '../src/board/order.js';
+import { boardRank, planMove, sortCards } from '../src/board/order.js';
 
 const cards = (...ranks) => ranks.map((rank, i) => ({ id: `n${i}`, rank }));
 
@@ -58,4 +58,19 @@ test('repeated moves into the same gap keep working', () => {
 test('unknown cards do nothing', () => {
   assert.deepEqual(planMove(cards(2, 1), 'x', 'n0', false), []);
   assert.deepEqual(planMove(cards(2, 1), 'n0', 'x', false), []);
+});
+
+test('without the setting a card keeps its own place: its rank, or its creation time', () => {
+  assert.equal(boardRank({ created: 100, edited: 900 }, false), 100);
+  assert.equal(boardRank({ created: 100, edited: 900, rank: 50, rankAt: 200 }, false), 50);
+});
+
+test('with the setting an edit lifts the card to the top', () => {
+  assert.equal(boardRank({ created: 100, edited: 900 }, true), 900);
+  // Dragged down earlier, edited afterwards: the edit wins.
+  assert.equal(boardRank({ created: 100, edited: 900, rank: 50, rankAt: 200 }, true), 900);
+});
+
+test('with the setting a drag after the last edit still decides the place', () => {
+  assert.equal(boardRank({ created: 100, edited: 900, rank: 50, rankAt: 1000 }, true), 50);
 });

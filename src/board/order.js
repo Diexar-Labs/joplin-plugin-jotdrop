@@ -3,6 +3,15 @@
 
 const STEP = 1000;
 
+// With "move edited notes to the top" an edit lifts the card, unless the card was dragged after that edit.
+// `edited` is Joplin's user_updated_time, which the board's own ticks and reminders leave alone.
+export function boardRank({ created, edited, rank, rankAt }, editedToTop) {
+  const own = typeof rank === 'number' ? rank : created;
+  if (!editedToTop) return own;
+  if (typeof rank !== 'number') return Math.max(created, edited || 0);
+  return edited > rankAt ? Math.max(rank, edited) : rank;
+}
+
 export function sortCards(cards) {
   return [...cards].sort((a, b) => b.rank - a.rank || (a.id < b.id ? -1 : 1));
 }

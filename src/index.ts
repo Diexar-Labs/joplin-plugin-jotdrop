@@ -3,6 +3,7 @@ import { MenuItemLocation, ModelType, SettingItemType, ToolbarButtonLocation } f
 import { cloudStatus, openCloud, registerCloudSettings, startCloud } from './cloudInbox';
 import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
+import { boardRank } from './board/order.js';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
 // shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
@@ -17,13 +18,15 @@ const COLORS = new Set(['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'pur
 const BOARD_FOLDER = 'JotDrop';
 // Everything a card needs except the text: the board sorts and filters on this, and fetches the
 // text only for the cards it actually shows, so thousands of notes stay light.
-const META_FIELDS = ['id', 'parent_id', 'title', 'is_todo', 'todo_completed', 'todo_due', 'user_created_time', 'updated_time', 'user_data'];
+const META_FIELDS = ['id', 'parent_id', 'title', 'is_todo', 'todo_completed', 'todo_due', 'user_created_time', 'user_updated_time', 'updated_time', 'user_data'];
 const PREVIEW_CHARS = 6000;
 
 const views = new Set<string>();
 // Per image resource: where the webview can load it, and whether it is a JotDrop drawing (its lines travel inside the PNG).
 const imageCache = new Map<string, { url: string; drawing: boolean } | null>();
 let platform = 'desktop';
+// Where the board was when a card was opened, so coming back from the note lands on the same spot.
+let boardScroll: { y: number; shown: number } | null = null;
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,6 +51,23 @@ function readUserData(raw: string | undefined): Record<string, unknown> {
 	} catch {
 		return {};
 	}
+}
+
+// When the board's rank was written: an edit after it lifts the card again (setting editedToTop).
+function rankTime(raw: string | undefined): number {
+	try {
+		const entry = JSON.parse(raw || '{}')[PLUGIN_ID]?.rank;
+		return entry && !entry.d ? Number(entry.t) || 0 : 0;
+	} catch {
+		return 0;
+	}
+}
+
+// With editedToTop on, a change the board makes (a tick, a reminder) keeps the note's edit time, so the card stays put.
+async function keepEditTime(id: string): Promise<Record<string, number>> {
+	if (!await joplin.settings.value('editedToTop')) return {};
+	const note = await joplin.data.get(['notes', id], { fields: ['user_updated_time'] });
+	return { user_updated_time: note.user_updated_time };
 }
 
 function fileUrl(path: string) {
@@ -88,7 +108,7 @@ async function firstAudio(body: string) {
 	return null;
 }
 
-function toMeta(note: any, tags: string[]) {
+function toMeta(note: any, tags: string[], editedToTop: boolean) {
 	const meta = readUserData(note.user_data);
 	return {
 		id: note.id,
@@ -98,7 +118,7 @@ function toMeta(note: any, tags: string[]) {
 		done: !!note.todo_completed,
 		due: note.todo_due || 0,
 		updated: note.updated_time,
-		rank: typeof meta.rank === 'number' ? meta.rank : note.user_created_time,
+		rank: boardRank({ created: note.user_created_time, edited: note.user_updated_time, rank: meta.rank, rankAt: rankTime(note.user_data) }, editedToTop),
 		pinned: meta.pinned === true,
 		archived: meta.archived === true,
 		color: COLORS.has(String(meta.color)) ? String(meta.color) : 'default',
@@ -128,7 +148,7 @@ async function tagMap(): Promise<Map<string, string[]>> {
 async function cardFor(id: string) {
 	const tags = (await allPages(['notes', id, 'tags'], { fields: ['title'] })).map((tag) => tag.title);
 	const [note, shown] = await Promise.all([joplin.data.get(['notes', id], { fields: META_FIELDS }), preview(id)]);
-	return { ...toMeta(note, tags), preview: shown };
+	return { ...toMeta(note, tags, !!await joplin.settings.value('editedToTop')), preview: shown };
 }
 
 async function loadBoard() {
@@ -139,12 +159,13 @@ async function loadBoard() {
 		tagMap(),
 		allPages(['tags'], { fields: ['title'] }),
 	]);
+	const editedToTop = !!await joplin.settings.value('editedToTop');
 	// Small drawers show up before they hold a paper, so a new one can be filled.
 	const drawers = allTags.map((tag) => String(tag.title)).filter((title) => isPaperDrawer(title) && title.includes('/'));
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
-		.map((note) => toMeta(note, tags.get(note.id) || []));
-	return { cards, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
+		.map((note) => toMeta(note, tags.get(note.id) || [], editedToTop));
+	return { cards, scroll: boardScroll, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
@@ -159,14 +180,15 @@ async function searchNotes(text: string) {
 // A flag remembers that, and removing the reminder makes it a plain note again.
 async function setReminder(id: string, due: number) {
 	const note = await joplin.data.get(['notes', id], { fields: ['is_todo', 'user_data'] });
+	const keep = await keepEditTime(id);
 	if (due > 0) {
 		if (!note.is_todo) await joplin.data.userDataSet(ModelType.Note, id, 'madeTodo', true);
-		await joplin.data.put(['notes', id], null, { is_todo: 1, todo_due: due, todo_completed: 0 });
+		await joplin.data.put(['notes', id], null, { is_todo: 1, todo_due: due, todo_completed: 0, ...keep });
 	} else if (readUserData(note.user_data).madeTodo === true) {
 		await joplin.data.userDataDelete(ModelType.Note, id, 'madeTodo');
-		await joplin.data.put(['notes', id], null, { is_todo: 0, todo_due: 0, todo_completed: 0 });
+		await joplin.data.put(['notes', id], null, { is_todo: 0, todo_due: 0, todo_completed: 0, ...keep });
 	} else {
-		await joplin.data.put(['notes', id], null, { todo_due: 0 });
+		await joplin.data.put(['notes', id], null, { todo_due: 0, ...keep });
 	}
 	return cardFor(id);
 }
@@ -206,7 +228,7 @@ async function toggleTask(id: string, line: number, checked: boolean) {
 	const lines = String(note.body || '').split('\n');
 	if (!/^\s*[-*+] \[[ xX]\] /.test(lines[line] || '')) throw new Error('changed');
 	lines[line] = lines[line].replace(/^(\s*[-*+] \[)[ xX](\] )/, `$1${checked ? 'x' : ' '}$2`);
-	await joplin.data.put(['notes', id], null, { body: lines.join('\n') });
+	await joplin.data.put(['notes', id], null, { body: lines.join('\n'), ...await keepEditTime(id) });
 	return cardFor(id);
 }
 
@@ -285,7 +307,10 @@ async function answer(message: any) {
 	case 'load': return loadBoard();
 	case 'previews': return Promise.all(message.ids.map(preview));
 	case 'search': return searchNotes(message.text);
-	case 'open': await joplin.commands.execute('openNote', message.id); return true;
+	case 'open':
+		if (Number.isFinite(message.y)) boardScroll = { y: Number(message.y), shown: Number(message.shown) || 0 };
+		await joplin.commands.execute('openNote', message.id);
+		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
 	case 'toggleTask': return toggleTask(message.id, message.line, !!message.checked);
 	case 'setPinned':
@@ -396,6 +421,7 @@ joplin.plugins.register({
 		await joplin.settings.registerSettings({
 			boardNoteId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Board note' },
 			openAtStartup: { value: true, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts' },
+			editedToTop: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move a note to the top of the board when you edit it', description: 'Ticking a checkbox or setting a reminder on the board leaves the card where it is. Pinned notes stay pinned.' },
 			paperTipClosed: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Paper drawer tip closed' },
 		});
 
@@ -441,6 +467,7 @@ joplin.plugins.register({
 		}
 
 		await joplin.workspace.onSyncComplete(async () => notifyBoards());
+		await joplin.settings.onChange(async (event) => { if (event.keys.includes('editedToTop')) await notifyBoards(); });
 		setInterval(() => { pollChanges().catch(() => { cursor = null; }); }, 3000);
 		if (platform === 'desktop') {
 			await registerCloudSettings();
