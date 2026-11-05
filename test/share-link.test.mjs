@@ -90,8 +90,8 @@ test('a guest tick comes into the note, and the next check makes the note the ba
 	const { cloud, joplin, deps, made, link } = await setup();
 	assert.equal(await checkLink(cloud.client, await link(), deps), 'quiet');
 	const list = await openList(URL, made.id, made.key, { fetcher: cloud.fetcher });
-	const ticked = await tickItem(URL, made.id, made.key, list, list.lines[1], true, { name: 'Anna', fetcher: cloud.fetcher });
-	await addItem(URL, made.id, made.key, ticked, 'cheese', { name: 'Ben', fetcher: cloud.fetcher });
+	const ticked = await tickItem(URL, made.id, made.key, list, list.lines[1], true, { name: 'Anna', now: 1000, fetcher: cloud.fetcher });
+	await addItem(URL, made.id, made.key, ticked, 'cheese', { name: 'Ben', now: 2000, fetcher: cloud.fetcher });
 	assert.equal(await checkLink(cloud.client, await link(), deps), 'note');
 	assert.equal(joplin.note.body, '- [ ] milk\n- [x] bread\n- [ ] cheese');
 	// The link already holds the same text: only the base moves to the note.
