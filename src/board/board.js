@@ -77,7 +77,7 @@ let boxes = {};
 let drag = null;
 let dropCard = null;
 let swallowClick = false;
-// Where to land when the board comes back from a note: { y, shown }, used once by the first render.
+// Where to land when the board comes back from a note: { id, top, y, shown }, used once by the first render.
 let restore = null;
 const previews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
@@ -607,6 +607,9 @@ async function renderGrid(fromTop) {
   shown = 0;
   place(count);
   scroller.scrollTop = restore ? restore.y : (fromTop ? 0 : y);
+  // Photos load after this, so the opened card itself is put back where it was; the browser then keeps it there.
+  const back = restore && restore.id ? els.grid.querySelector(`[data-id="${restore.id}"]`) : null;
+  if (back) scroller.scrollTop += back.getBoundingClientRect().top - restore.top;
   restore = null;
   loadMore();
 }
@@ -688,7 +691,9 @@ function cardEl(c) {
 function openCard(id) {
   const plain = !state.query.trim() && !state.folderId && !state.tag && !state.paper && !state.archive;
   const y = plain ? (document.scrollingElement || document.documentElement).scrollTop : 0;
-  post({ type: 'open', id, y, shown }).catch(() => toast(t.failed));
+  const card = els.grid.querySelector(`[data-id="${id}"]`);
+  const top = card ? card.getBoundingClientRect().top : 0;
+  post({ type: 'open', id, y, top, shown }).catch(() => toast(t.failed));
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.

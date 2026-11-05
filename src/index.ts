@@ -26,7 +26,7 @@ const views = new Set<string>();
 const imageCache = new Map<string, { url: string; drawing: boolean } | null>();
 let platform = 'desktop';
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
-let boardScroll: { y: number; shown: number } | null = null;
+let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -308,7 +308,7 @@ async function answer(message: any) {
 	case 'previews': return Promise.all(message.ids.map(preview));
 	case 'search': return searchNotes(message.text);
 	case 'open':
-		if (Number.isFinite(message.y)) boardScroll = { y: Number(message.y), shown: Number(message.shown) || 0 };
+		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
 		await joplin.commands.execute('openNote', message.id);
 		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
