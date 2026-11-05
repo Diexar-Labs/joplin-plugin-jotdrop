@@ -25,6 +25,8 @@ const views = new Set<string>();
 // Per image resource: where the webview can load it, and whether it is a JotDrop drawing (its lines travel inside the PNG).
 const imageCache = new Map<string, { url: string; drawing: boolean } | null>();
 let platform = 'desktop';
+// The board note, kept in memory so the editor activation check can answer without a lookup.
+let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
 
@@ -381,15 +383,16 @@ async function findBoardNoteId(): Promise<string | null> {
 	if (cached) {
 		try {
 			const note = await joplin.data.get(['notes', cached], { fields: ['id', 'body', 'deleted_time'] });
-			if (note && !note.deleted_time && isBoardBody(note.body)) return note.id;
+			if (note && !note.deleted_time && isBoardBody(note.body)) { boardId = note.id; return note.id; }
 		} catch {
 			// Gone: look again below.
 		}
 	}
 	// A board that came in through sync, or a setting that was lost.
 	const found = (await allPages(['search'], { query: '"jotdrop-board"', type: 'note', fields: ['id', 'body'] })).find((note) => isBoardBody(note.body));
-	await joplin.settings.setValue('boardNoteId', found ? found.id : '');
-	return found ? found.id : null;
+	boardId = found ? found.id : null;
+	await joplin.settings.setValue('boardNoteId', boardId || '');
+	return boardId;
 }
 
 // The board and quick notes get a notebook of their own instead of whichever one happens to be selected.
@@ -407,6 +410,7 @@ async function openBoard(create: boolean) {
 		id = note.id as string;
 		await joplin.data.userDataSet(ModelType.Note, id, 'board', true);
 		await joplin.settings.setValue('boardNoteId', id);
+		boardId = id;
 	}
 	await joplin.commands.execute('openNote', id);
 	await delay(400);
@@ -420,10 +424,11 @@ joplin.plugins.register({
 		await joplin.settings.registerSection('jotdrop', { label: 'JotDrop', iconName: 'fas fa-th-large' });
 		await joplin.settings.registerSettings({
 			boardNoteId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Board note' },
-			openAtStartup: { value: true, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts' },
+			openAtStartup: { value: platform === 'desktop', type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts', description: 'On Android this is off by default: the board is one tap away behind the puzzle button, and opening it at start could land on top of a note you had just opened.' },
 			editedToTop: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move a note to the top of the board when you edit it', description: 'Ticking a checkbox or setting a reminder on the board leaves the card where it is. Pinned notes stay pinned.' },
 			paperTipClosed: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Paper drawer tip closed' },
 		});
+		boardId = String(await joplin.settings.value('boardNoteId') || '') || null;
 
 		await joplin.views.editors.register(VIEW_ID, {
 			onSetup: async (view) => {
@@ -435,6 +440,8 @@ joplin.plugins.register({
 				await joplin.views.editors.onUpdate(view, async () => notifyBoards());
 			},
 			onActivationCheck: async ({ noteId }) => {
+				// Joplin for Android shows the note's plain text until this answers, so the board answers from memory.
+				if (boardId && noteId === boardId) return true;
 				try {
 					return isBoardBody((await joplin.data.get(['notes', noteId], { fields: ['body'] })).body);
 				} catch {
@@ -475,7 +482,13 @@ joplin.plugins.register({
 		}
 
 		if (await joplin.settings.value('openAtStartup')) {
-			setTimeout(() => { openBoard(false).catch(() => {}); }, 1500);
+			setTimeout(async () => {
+				try {
+					// On a phone the user may already be in a note by the time the plugin has loaded.
+					if (platform !== 'desktop' && await joplin.workspace.selectedNote()) return;
+					await openBoard(false);
+				} catch { /* no board yet, or Joplin is still busy */ }
+			}, 1500);
 		}
 	},
 });

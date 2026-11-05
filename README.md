@@ -62,7 +62,7 @@ Then open the board:
 - **Desktop:** click the board button in the editor toolbar, or **View > Open JotDrop board**.
 - **Android:** tap the puzzle button at the top, then **Open JotDrop board**.
 
-The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. From then on the board opens when Joplin starts; you can turn that off under **Options > JotDrop**.
+The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. On desktop the board opens when Joplin starts from then on; you can turn that off under **Options > JotDrop**. On Android you open it from the puzzle button, so it never lands on top of a note you had just opened; you can switch opening at start on under **Configuration > JotDrop**.
 
 Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins it recommends itself, so JotDrop is not available there.
 
@@ -261,7 +261,7 @@ We tested it with 5,000 notes on desktop and 2,000 on Android. The board only fe
 
 - **Two devices, one note.** If two devices change the plugin data of the same note before they sync, only the change of the device that syncs first stays. This is about colors, pins and order, not about your text.
 - **Long words on a phone.** A long word in a card title can break in the middle of the word.
-- **First open.** The first time, you open the board yourself. After that it opens when Joplin starts.
+- **First open.** The first time, you open the board yourself. After that it opens when Joplin starts on desktop; on Android you open it from the puzzle button.
 - **Renamed and edited at once.** A note that gets a new file name and new text in the same sync comes in as a new note. The JotDrop app does not rename notes when you edit them.
 
 ## Contributing
