@@ -98,7 +98,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .jd-toast { position: fixed; left: 50%; bottom: 18px; z-index: 30; max-width: min(90vw, 460px); padding: 9px 16px; translate: -50% 20px; border-radius: 10px; background: var(--ink); color: var(--page); font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s ease, translate .2s ease; }
 .jd-toast.is-shown { opacity: 1; translate: -50% 0; }
-@media (prefers-reduced-motion: reduce) { .card-paper, .jd-toast, .card-pin, .card-actions { transition: none; } }
+.jd-restoring #jotdrop-root { visibility: hidden; }
+.jd-totop { position: fixed; right: 18px; bottom: 18px; z-index: 20; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: var(--surface); box-shadow: 3px 3px 0 var(--amber); font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; opacity: 0; pointer-events: none; translate: 0 10px; transition: opacity .2s ease, translate .2s ease; }
+.jd-totop.is-shown { opacity: 1; pointer-events: auto; translate: 0 0; }
+@media (prefers-reduced-motion: reduce) { .card-paper, .jd-toast, .jd-totop, .card-pin, .card-actions { transition: none; } }
 /* On a phone a card shows a Keep-sized peek of the note, not the whole note. */
 :root[data-platform="mobile"] body { font-size: 14px; }
 :root[data-platform="mobile"] .note-preview { max-height: 190px; }

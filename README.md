@@ -74,7 +74,7 @@ Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins
 - **Ten soft paper colors**, each with its name, so you never have to rely on color alone.
 - **Your own order.** Drag with the mouse, or on a phone hold a card for a moment first. Cards stay where you put them, also when you tick something.
 - **Edited notes on top, if you like.** Turn on **Options > JotDrop > Move a note to the top of the board when you edit it**. Ticking a checkbox or setting a reminder on the board still leaves the card where it is.
-- **Back where you were.** Open a card and go back, and the board shows the same spot instead of the top.
+- **Back where you were.** Open a card and go back, and the board shows the same spot instead of the top. Far down a long board, the arrow button in the corner takes you straight back up to the search and filters.
 - **Archive.** Move a card off the board without deleting anything, and bring it back whenever you like.
 
 ### Capture

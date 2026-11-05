@@ -23,7 +23,7 @@ const STRINGS = {
     drawer: 'Drawer', expiresOn: 'Expires on', warnMe: 'Warn me', warnNone: 'No warning',
     warn: { '1w': '1 week before', '1m': '1 month before', '2m': '2 months before', '3m': '3 months before' },
     warnHint: 'A warning replaces this note\'s reminder.', save: 'Save', takeOut: 'Take out of the drawer', paperSaved: 'Saved in the paper drawer', tookOut: 'Taken out of the paper drawer',
-    expires: (d) => `Expires ${d}`, expired: (d) => `Expired ${d}`, tipClose: 'Close this tip',
+    expires: (d) => `Expires ${d}`, expired: (d) => `Expired ${d}`, tipClose: 'Close this tip', toTop: 'Back to the top',
     intro: { title: INTRO.title, lead: INTRO.lead, points: INTRO.points.map((p) => p.text), phone: INTRO.phone },
   },
   nl: {
@@ -47,7 +47,7 @@ const STRINGS = {
     drawer: 'Laatje', expiresOn: 'Verloopt op', warnMe: 'Waarschuw me', warnNone: 'Geen waarschuwing',
     warn: { '1w': '1 week vooraf', '1m': '1 maand vooraf', '2m': '2 maanden vooraf', '3m': '3 maanden vooraf' },
     warnHint: 'Een waarschuwing vervangt de herinnering van deze notitie.', save: 'Opslaan', takeOut: 'Uit de la halen', paperSaved: 'Bewaard in de Paper drawer', tookOut: 'Uit de Paper drawer gehaald',
-    expires: (d) => `Verloopt ${d}`, expired: (d) => `Verlopen ${d}`, tipClose: 'Deze tip sluiten',
+    expires: (d) => `Verloopt ${d}`, expired: (d) => `Verlopen ${d}`, tipClose: 'Deze tip sluiten', toTop: 'Terug naar boven',
     intro: {
       title: 'Je papierla', lead: 'Scan een brief, een polis of een paspoort en hij komt hier terecht.',
       points: [
@@ -164,7 +164,12 @@ async function load() {
     return;
   }
   if (!els) {
-    if (data.scroll && data.scroll.y > 0) restore = data.scroll;
+    if (data.scroll && data.scroll.y > 0) {
+      restore = data.scroll;
+      // The board stays hidden until it is back at its old place, so it does not show the top first and then jump.
+      document.documentElement.classList.add('jd-restoring');
+      setTimeout(revealBoard, 2000);
+    }
     t = STRINGS[String(data.locale).slice(0, 2)] || STRINGS.en;
     locale = String(data.locale).replace('_', '-');
     document.documentElement.dataset.platform = data.platform;
@@ -291,11 +296,17 @@ function buildShell() {
   const grid = h('div', { class: 'jd-grid' });
   const more = h('div', { class: 'jd-more', 'aria-hidden': 'true' });
   const toastEl = h('div', { class: 'jd-toast', role: 'status', 'aria-live': 'polite' });
+  // The board comes back where it was, so a long board needs a quick way up to the search and filters (forum, 5 Nov).
+  const scroller = document.scrollingElement || document.documentElement;
+  const toTop = h('button', { type: 'button', class: 'jd-totop', title: t.toTop, 'aria-label': t.toTop,
+    onclick: () => scroller.scrollTo({ top: 0 }) }, '↑');
+  const showToTop = () => toTop.classList.toggle('is-shown', scroller.scrollTop > window.innerHeight);
+  window.addEventListener('scroll', showToTop, { passive: true });
   els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
     h('div', { class: 'jd-filters' }, search, folder, archive, draw, cloud));
-  document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toastEl);
+  document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toTop, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
@@ -611,7 +622,12 @@ async function renderGrid(fromTop) {
   const back = restore && restore.id ? els.grid.querySelector(`[data-id="${restore.id}"]`) : null;
   if (back) scroller.scrollTop += back.getBoundingClientRect().top - restore.top;
   restore = null;
+  revealBoard();
   loadMore();
+}
+
+function revealBoard() {
+  document.documentElement.classList.remove('jd-restoring');
 }
 
 // Keep-style stacking: every card goes to the shortest column, so newest stays near the top.
