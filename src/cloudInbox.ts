@@ -1,6 +1,7 @@
 import joplin from 'api';
 import { ModelType, SettingItemType } from 'api/types';
-import { CloudClient, CloudError } from './cloud-shared/client.mjs';
+import { CloudClient, CloudError, identifyClient } from './cloud-shared/client.mjs';
+import manifest from './manifest.json';
 import { noteSummary } from './cloud-shared/note.mjs';
 import { validExpires } from './cloud-shared/paper.mjs';
 import { remoteFiles } from './cloud-shared/sync.mjs';
@@ -121,6 +122,8 @@ async function saveState(state: State) {
 }
 
 export async function registerCloudSettings() {
+	// The server sees which plugin version this is, for the owner's overview of versions in use.
+	identifyClient('joplin', manifest.version);
 	await joplin.settings.registerSettings({
 		cloudCredentials: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, secure: true, label: 'JotDrop Cloud device' },
 	});
