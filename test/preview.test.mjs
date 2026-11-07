@@ -12,6 +12,14 @@ test('a first heading that is not the title stays', () => {
   assert.deepEqual(texts(previewLines('## Ingrediënten\n- bloem', 'Pannenkoeken')), ['Ingrediënten', '- bloem']);
 });
 
+test('a card with tasks shows every task, even a hundred', () => {
+  const body = ['Some text above', ...Array.from({ length: 100 }, (_, i) => `- [ ] task ${i + 1}`)].join('\n');
+  const lines = previewLines(body, 'List');
+  assert.equal(lines.filter((line) => line.line !== undefined).length, 100);
+  assert.equal(lines.at(-1).line, 100);
+  assert.equal(previewLines(Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n'), 'Plain').length, 12);
+});
+
 test('checklist lines keep the index of their line in the note', () => {
   const tasks = previewLines('Intro\n\n- [x] A\n- [ ] B', 'T').filter((line) => line.line !== undefined);
   assert.deepEqual(tasks.map((line) => [line.line, line.checked, line.text]), [[2, true, 'A'], [3, false, 'B']]);

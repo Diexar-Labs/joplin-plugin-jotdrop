@@ -131,11 +131,16 @@ function toMeta(note: any, tags: string[], editedToTop: boolean) {
 	};
 }
 
+// A note with tasks reaches the board whole, so every task shows and ticks there (Eric, 7 nov).
+function keepTasks(body: string): string {
+	return /^\s*[-*+] \[[ xX]\] /m.test(body) ? body : body.slice(0, PREVIEW_CHARS);
+}
+
 async function preview(id: string) {
 	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time'] });
 	const body: string = note.body || '';
 	const audio = await firstAudio(body);
-	return { id, updated: note.updated_time, body: (audio ? body.replace(audio.link, '') : body).slice(0, PREVIEW_CHARS), image: await firstImage(body), audio: audio?.url || null };
+	return { id, updated: note.updated_time, body: keepTasks(audio ? body.replace(audio.link, '') : body), image: await firstImage(body), audio: audio?.url || null };
 }
 
 async function tagMap(): Promise<Map<string, string[]>> {

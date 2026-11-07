@@ -692,7 +692,7 @@ function cardEl(c) {
   if (c.title) card.append(h('h3', { text: c.title }));
   if (shownNote.audio) card.append(h('audio', { class: 'card-audio', controls: true, preload: 'metadata', src: shownNote.audio }));
   if (lines.length) {
-    card.append(h('div', { class: 'note-preview' }, lines.map((line) => (line.line === undefined
+    card.append(h('div', { class: `note-preview${lines.some((line) => line.line !== undefined) ? ' has-tasks' : ''}` }, lines.map((line) => (line.line === undefined
       ? h('div', { class: 'jd-line', text: line.text || ' ' })
       : task(c, line)))));
   }

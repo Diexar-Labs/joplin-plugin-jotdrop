@@ -74,13 +74,17 @@ export function urlHost(url) {
  * The card lines of a Joplin note body: text lines in plain form and checklist lines with the
  * index of their line in the body, so a tick on the card changes exactly that line.
  */
+const TASK_LINE = /^\s*[-*+] \[[ xX]\] /m;
+
 export function previewLines(body, title = '', max = 12) {
   const out = [];
   const lines = body.split('\n');
   const plainTitle = normalizeHeading(title);
   let fence = '';
   let started = false;
-  for (let i = 0; i < lines.length && out.length < max; i++) {
+  // Every task stays on the card, however many, so all of them tick from the board (Eric, 7 nov).
+  const limit = TASK_LINE.test(body) ? Infinity : max;
+  for (let i = 0; i < lines.length && out.length < limit; i++) {
     const line = lines[i];
     // Joplin notes often repeat their title as a first heading; like JotDrop elsewhere, the card shows it once.
     if (!started && line.trim()) {

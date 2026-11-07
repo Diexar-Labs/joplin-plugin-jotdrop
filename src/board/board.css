@@ -105,6 +105,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* On a phone a card shows a Keep-sized peek of the note, not the whole note. */
 :root[data-platform="mobile"] body { font-size: 14px; }
 :root[data-platform="mobile"] .note-preview { max-height: 190px; }
+.note-preview.has-tasks, :root[data-platform="mobile"] .note-preview.has-tasks { max-height: none; }
 :root[data-platform="mobile"] .card-cover { max-height: 150px; }
 @media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-search { max-width: none; } }
 :root[data-platform="mobile"] .jd-cloud { display: none; }
