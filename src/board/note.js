@@ -78,7 +78,7 @@ const TASK_LINE = /^\s*[-*+] \[[ xX]\] /m;
 
 export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   const out = [];
-  const lines = body.split('\n');
+  const lines = body.split(/\r?\n/);
   const frontmatterEnd = lines[0]?.trim() === '---' ? lines.findIndex((line, i) => i > 0 && line.trim() === '---') : -1;
   const plainTitle = normalizeHeading(title);
   let fence = '';

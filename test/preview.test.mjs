@@ -43,3 +43,14 @@ test('image-only lines are left out of the text', () => {
 test('a checklist inside a code block is not a checklist', () => {
   assert.deepEqual(previewLines('```\n- [ ] not a task\n```', 'x'), [{ text: '- [ ] not a task' }]);
 });
+
+test('a checklist saved with Windows line endings (CRLF) still shows its tasks, on the same source lines', () => {
+  const body = ['- [ ] Een', '- [x] Twee', '- [ ] Drie'].join('\r\n');
+  const lines = previewLines(body, 'List');
+  assert.deepEqual(lines, [
+    { line: 0, checked: false, text: 'Een' },
+    { line: 1, checked: true, text: 'Twee' },
+    { line: 2, checked: false, text: 'Drie' },
+  ]);
+  assert.deepEqual(texts(previewLines('Eerste\r\n\r\nTweede\r\n', 'T')), ['Eerste', '', 'Tweede']);
+});
