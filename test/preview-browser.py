@@ -72,9 +72,13 @@ def main():
                 card.locator('[data-preview-action="toggle"]').click()
                 assert int(preview.get_attribute("data-visible-tasks")) == 5
         article = page.locator('[data-id="article"]')
-        assert article.get_by_role("checkbox").count() == 0
+        # A long introduction is clipped to half the preview so the tasks after it stay visible.
+        assert article.get_by_role("checkbox").count() == 3
         assert article.locator('[data-preview-action="toggle"]').count() == 0
-        assert article.locator('[data-preview-action="open"]').inner_text() == "Open note - 3 more tasks"
+        assert article.locator('[data-preview-action="open"]').inner_text() == "Open note"
+        intro = article.locator(".note-preview").evaluate("el => ({text: el.querySelector('.jd-line')?.textContent || '', bottom: el.querySelector('.jd-line').getBoundingClientRect().bottom - el.getBoundingClientRect().top, cap: parseFloat(el.style.maxHeight)})")
+        assert intro["text"].startswith("Long article sentence.") and intro["text"].endswith("…"), intro
+        assert intro["bottom"] <= intro["cap"] / 2 + 1, intro
         shots = Path(tempfile.gettempdir()) / "kilo" / "compact-card-checks"
         shots.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(shots / "joplin-desktop.png"), full_page=True)
