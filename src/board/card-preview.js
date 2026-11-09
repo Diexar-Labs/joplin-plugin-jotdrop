@@ -1,109 +1,155 @@
 // Presentation only; task identities and writes remain owned by the board.
+//
+// Cards follow Google Keep (measured 9 Nov 2026, Eric's decision): a note whose content is only
+// tasks is a checklist card with up to 10 open tasks, the ticked ones folded into "+ N checked items";
+// every other note is a text card, its tasks shown as plain ☐/☑ text without checkboxes.
+export const MAX_CARD_TASKS = 10;
+
+/** A line with only hashtags is metadata: the tags already show as chips on the card. */
+export function tagOnly(text) {
+  return /^\s*(?:\\?#[^\s#]+\s*)+$/u.test(String(text || ''));
+}
+
+/** True when every content row is a task (and there is at least one). */
+export function checklistOnly(rows, isTask, isMeta = () => false) {
+  const content = rows.filter((row) => isTask(row) || !isMeta(row));
+  return content.length > 0 && content.every(isTask);
+}
+
 export function cardPreview(host, rows, options) {
   const doc = host.ownerDocument, win = doc.defaultView;
   const controls = doc.createElement('div');
   if (!host.id) host.id = `compact-preview-${++previewSequence}`;
   controls.className = 'compact-preview-controls';
   host.after(controls);
-  let signature = '', frame = 0, disposed = false;
-  const total = rows.filter(options.isTask).length;
-  const measure = (expanded) => {
+  let signature = '', frame = 0, settle = 0, disposed = false, watched = [];
+  const isMeta = (row) => !options.isTask(row) && Boolean(options.isMeta?.(row));
+  const fits = (node, limit) => node.getBoundingClientRect().bottom - host.getBoundingClientRect().top <= limit + .5;
+  const measure = () => {
     host.replaceChildren();
-    const height = Math.max(0, Math.min(expanded ? 320 : 200, options.height() * (expanded ? .6 : .4)));
-    host.style.maxHeight = `${height}px`;
-    const max = expanded ? 10 : 5;
-    let lastTask = -1;
-    rows.forEach((row, i) => { if (options.isTask(row)) lastTask = i; });
-    let tasks = 0, hidden = false, used = 0, textUsed = 0, textFull = false;
     const nodes = [];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i], task = options.isTask(row);
-      if (task && tasks >= max) { hidden = true; break; }
-      // Text with a visible task still to come may fill at most half the preview,
-      // so a long introduction cannot push every checkbox out of the card.
-      const capped = !task && i < lastTask && tasks < max;
-      if (capped && textFull) { hidden = true; continue; }
-      const node = options.render(row);
+    const checklist = checklistOnly(rows, options.isTask, options.isMeta);
+    if (checklist) {
+      // Room for 10 one-line tasks; long tasks may still leave some for "Open note - N more tasks".
+      const height = Math.max(0, Math.min(480, options.height() * .6));
+      host.style.maxHeight = `${height}px`;
+      // A task ticked on the card stays until its stroke is drawn, then joins the checked ones.
+      let wait = 0;
+      const open = rows.filter((row) => {
+        if (!options.isTask(row)) return false;
+        if (!options.isChecked(row)) return true;
+        const left = options.lingering?.(row) || 0;
+        wait = Math.max(wait, left);
+        return left > 0;
+      });
+      const checked = rows.filter(options.isTask).length - open.length;
+      let tasks = 0, clamped = false;
+      for (const row of open) {
+        if (tasks >= MAX_CARD_TASKS) break;
+        const node = options.render(row, false);
+        host.append(node);
+        if (!fits(node, height)) { node.remove(); break; }
+        nodes.push(node);
+        tasks++;
+        const text = node.querySelector('[data-preview-task-text]');
+        if (text && text.scrollHeight > text.clientHeight + 1) {
+          clamped = true;
+          // A line-clamped link can span invisible lines; keep only its noninteractive label.
+          for (const link of text.querySelectorAll('a, button, [tabindex]')) link.replaceWith(doc.createTextNode(link.textContent || ''));
+        }
+      }
+      return { checklist, nodes, height, tasks, more: open.length - tasks, checked, wait, hidden: clamped || Boolean(options.truncated) };
+    }
+    const height = Math.max(0, Math.min(200, options.height() * .4));
+    host.style.maxHeight = `${height}px`;
+    let hidden = false, used = 0;
+    for (const row of rows) {
+      const node = options.render(row, true);
       host.append(node);
-      const top = node.getBoundingClientRect().top - host.getBoundingClientRect().top;
-      const limit = capped ? Math.min(height, top + height / 2 - textUsed) : height;
-      if (top + node.getBoundingClientRect().height > limit + .5) {
-        if (task) { node.remove(); hidden = true; break; }
+      if (!fits(node, height)) {
+        // A partial text block becomes plain text: clipped links must not remain focusable.
+        const top = node.getBoundingClientRect().top - host.getBoundingClientRect().top;
         const chars = Array.from(node.textContent || '');
         let low = 0, high = chars.length;
+        const ok = () => top + node.getBoundingClientRect().height <= height + .5;
         while (low < high) {
           const mid = Math.ceil((low + high) / 2);
           node.textContent = chars.slice(0, mid).join('') + '…';
-          if (top + node.getBoundingClientRect().height <= limit + .5) low = mid;
-          else high = mid - 1;
+          if (ok()) low = mid; else high = mid - 1;
         }
         node.textContent = chars.slice(0, low).join('') + '…';
-        if (top + node.getBoundingClientRect().height > limit + .5) node.remove();
-        else nodes.push(node);
+        if (ok() && low) nodes.push(node); else node.remove();
         hidden = true;
-        if (capped) { textFull = true; continue; }
         break;
       }
-      nodes.push(node); used++;
-      if (capped) textUsed += node.getBoundingClientRect().height;
-      if (task) {
-        tasks++;
-        const text = node.querySelector('[data-preview-task-text]');
-        if (text && text.scrollHeight > text.clientHeight + 1) hidden = true;
-      }
+      nodes.push(node);
+      used++;
     }
-    return { nodes, tasks, hidden: hidden || used < rows.length, height };
+    return { checklist, nodes, height, tasks: 0, more: 0, checked: 0, wait: 0, hidden: hidden || used < rows.length || Boolean(options.truncated) };
   };
   const fit = () => {
     if (disposed || !host.isConnected || !host.clientWidth) return;
     const active = doc.activeElement;
     const focusAction = controls.contains(active) ? active.dataset.previewAction : undefined;
-    const focusIndex = host.contains(active) ? [...host.querySelectorAll('button, input')].indexOf(active) : -1;
-    const compact = measure(false), expanded = measure(true);
-    const result = options.expanded() ? expanded : compact;
+    const focusIndex = host.contains(active) ? [...host.querySelectorAll('button, input, a')].indexOf(active) : -1;
+    const result = measure();
     host.replaceChildren(...result.nodes);
+    // A preview at its height cap keeps its size when the text grows; its rows still notice.
+    for (const node of watched) observer.unobserve(node);
+    watched = result.nodes;
+    for (const node of watched) observer.observe(node);
     host.style.maxHeight = `${result.height}px`;
+    host.dataset.mode = result.checklist ? 'checklist' : 'text';
     host.dataset.visibleTasks = String(result.tasks);
-    host.dataset.hiddenTasks = String(total - result.tasks);
+    host.dataset.hiddenTasks = String(result.more);
+    host.dataset.checkedTasks = String(result.checked);
     controls.replaceChildren();
-    const add = (label, action, kind) => {
+    const add = (label, kind) => {
       const button = doc.createElement('button');
       button.type = 'button'; button.textContent = label; button.dataset.previewAction = kind;
-      button.addEventListener('click', (event) => { event.stopPropagation(); action(); });
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        options.open();
+      });
       controls.append(button);
-      return button;
     };
-    if (options.expanded() || expanded.tasks > compact.tasks) {
-      const toggle = add(options.expanded() ? options.less : options.more, () => {
-        const card = host.closest('article'), before = card.getBoundingClientRect().top;
-        options.toggle(); fit();
-        doc.scrollingElement.scrollTop += card.getBoundingClientRect().top - before;
-        controls.querySelector('[data-preview-action="toggle"]')?.focus({ preventScroll: true });
-      }, 'toggle');
-      toggle.setAttribute('aria-expanded', String(options.expanded()));
-      toggle.setAttribute('aria-controls', host.id);
+    if (options.open) {
+      if (result.more) add(options.openLabel(result.more), 'open');
+      if (result.checked) add(options.checkedLabel(result.checked), 'checked');
+      if (!result.more && !result.checked && result.hidden) add(options.openLabel(0), 'open');
     }
-    if (result.hidden) add(options.openLabel(total - result.tasks), options.open, 'open');
     controls.hidden = !controls.childElementCount;
-    if (focusIndex >= 0) (host.querySelectorAll('button, input')[focusIndex] || controls.querySelector('button'))?.focus({ preventScroll: true });
+    if (focusIndex >= 0) (host.querySelectorAll('button, input, a')[focusIndex] || controls.querySelector('button'))?.focus({ preventScroll: true });
     else if (focusAction) (controls.querySelector(`[data-preview-action="${focusAction}"]`) || controls.querySelector('button'))?.focus({ preventScroll: true });
+    win.clearTimeout(settle);
+    if (result.wait > 0) settle = win.setTimeout(fit, result.wait + 30);
+    options.changed?.();
   };
   const schedule = () => {
     if (disposed) return;
     const style = win.getComputedStyle(host);
     const next = [host.clientWidth, style.fontSize, style.lineHeight, options.height()].join(':');
     if (next === signature) return;
-    signature = next; win.cancelAnimationFrame(frame); frame = win.requestAnimationFrame(fit);
+    signature = next;
+    win.cancelAnimationFrame(frame);
+    frame = win.requestAnimationFrame(fit);
   };
   const observer = new win.ResizeObserver(schedule);
-  observer.observe(host); win.addEventListener('resize', schedule);
+  observer.observe(host);
+  if (options.resizeTarget) observer.observe(options.resizeTarget);
+  win.addEventListener('resize', schedule);
   const fontsChanged = () => { signature = ''; schedule(); };
-  doc.fonts?.addEventListener('loadingdone', fontsChanged); doc.fonts?.ready.then(fontsChanged);
+  doc.fonts?.addEventListener('loadingdone', fontsChanged);
+  doc.fonts?.ready.then(fontsChanged);
   fit();
-  return { fit, destroy() {
-    disposed = true; observer.disconnect(); win.cancelAnimationFrame(frame);
-    win.removeEventListener('resize', schedule); doc.fonts?.removeEventListener('loadingdone', fontsChanged);
-  } };
+  return {
+    fit,
+    destroy() {
+      disposed = true; observer.disconnect(); win.cancelAnimationFrame(frame); win.clearTimeout(settle);
+      win.removeEventListener('resize', schedule);
+      doc.fonts?.removeEventListener('loadingdone', fontsChanged);
+    },
+  };
 }
 
 let previewSequence = 0;

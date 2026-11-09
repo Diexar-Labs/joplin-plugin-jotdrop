@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    bodies = {f"n{count}": "\n".join(f"- [{'x' if i % 2 else ' '}] task {i + 1}" for i in range(count)) or "Plain text" for count in [0, 1, 5, 6, 10, 11, 100]}
+    bodies = {f"n{count}": "\n".join(f"- [ ] task {i + 1}" for i in range(count)) or "Plain text" for count in [0, 1, 5, 10, 11, 12, 100]}
+    bodies["checked"] = "\n".join(f"- [{'x' if i % 2 else ' '}] chk {i + 1}" for i in range(15))
+    bodies["mixed"] = "Some tips first.\n\n- [ ] MA\n- [x] MB"
+    bodies["tagged"] = "- [ ] milk\n- [ ] bread\n\n#groceries"
     bodies["article"] = "Long article sentence. " * 300 + "\n- [ ] A\n- [x] B\n- [ ] C"
     cards = [{"id": key, "title": key, "color": "default", "tags": [], "pinned": False, "archived": False, "updated": 1, "rank": 1000 - i, "folderId": "f"} for i, key in enumerate(bodies)]
     bridge = """
@@ -52,33 +55,42 @@ def main():
         page.route("http://jotdrop.test/**", serve)
         page.add_init_script(bridge)
         page.goto("http://jotdrop.test/", wait_until="networkidle")
-        page.locator('.note-preview[data-visible-tasks="5"]').first.wait_for()
-        for count in [0, 1, 5, 6, 10, 11, 100]:
-            card = page.locator(f'[data-id="n{count}"]')
+        page.locator('.note-preview[data-visible-tasks="10"]').first.wait_for()
+
+        def state(card):
             preview = card.locator(".note-preview")
-            assert int(preview.get_attribute("data-visible-tasks")) == min(5, count), count
-            if count > 5:
-                toggle = card.locator('[data-preview-action="toggle"]')
-                toggle.scroll_into_view_if_needed()
-                before = card.bounding_box()["y"]
-                toggle.click()
-                assert int(preview.get_attribute("data-visible-tasks")) == min(10, count)
-                assert int(preview.get_attribute("data-hidden-tasks")) == max(0, count - 10)
-                assert abs(card.bounding_box()["y"] - before) < 3
-                if count >= 10:
-                    card.get_by_role("checkbox", name="task 10", exact=True).click()
-                    page.wait_for_function("id => messages.some(m=>m.type==='toggleTask'&&m.id===id&&m.line===9)", arg=f"n{count}")
-                    assert int(preview.get_attribute("data-visible-tasks")) == 10
-                card.locator('[data-preview-action="toggle"]').click()
-                assert int(preview.get_attribute("data-visible-tasks")) == 5
+            return {k: preview.get_attribute(f"data-{k}") for k in ["mode", "visible-tasks", "hidden-tasks", "checked-tasks"]}
+
+        # Like Keep: up to 10 open tasks at once, no More/Less, the rest behind "Open note - N more tasks".
+        for count in [1, 5, 10, 11, 12, 100]:
+            card = page.locator(f'[data-id="n{count}"]')
+            assert state(card) == {"mode": "checklist", "visible-tasks": str(min(10, count)), "hidden-tasks": str(max(0, count - 10)), "checked-tasks": "0"}, (count, state(card))
+            assert card.locator('[data-preview-action="toggle"]').count() == 0
+            assert card.locator('[data-preview-action="open"]').count() == (1 if count > 10 else 0)
+        assert state(page.locator('[data-id="n0"]'))["mode"] == "text"
+        # Ticking task 10 changes line 10; after a moment it joins "+ 1 checked item" and task 11 moves up.
+        card = page.locator('[data-id="n12"]')
+        card.get_by_role("checkbox", name="task 10", exact=True).click()
+        page.wait_for_function("id => messages.some(m=>m.type==='toggleTask'&&m.id===id&&m.line===9&&m.checked)", arg="n12")
+        page.wait_for_timeout(700)
+        assert state(card) == {"mode": "checklist", "visible-tasks": "10", "hidden-tasks": "1", "checked-tasks": "1"}, state(card)
+        assert card.locator('[data-preview-action="checked"]').text_content() == "+ 1 checked item"
+        assert card.get_by_role("checkbox", name="task 11", exact=True).count() == 1
+        checked = page.locator('[data-id="checked"]')
+        assert state(checked) == {"mode": "checklist", "visible-tasks": "8", "hidden-tasks": "0", "checked-tasks": "7"}, state(checked)
+        assert checked.get_by_role("checkbox", checked=True).count() == 0
+        # Any other text makes it a text card (like Joplin's welcome note "4. Tips"): tasks as ☐/☑ text.
+        mixed = page.locator('[data-id="mixed"]')
+        assert state(mixed)["mode"] == "text" and mixed.get_by_role("checkbox").count() == 0, state(mixed)
+        mixed_text = mixed.locator(".note-preview").text_content()
+        assert "☐ MA" in mixed_text and "☑ MB" in mixed_text, mixed_text
+        tagged = page.locator('[data-id="tagged"]')
+        assert state(tagged)["mode"] == "checklist" and tagged.get_by_role("checkbox").count() == 2, state(tagged)
         article = page.locator('[data-id="article"]')
-        # A long introduction is clipped to half the preview so the tasks after it stay visible.
-        assert article.get_by_role("checkbox").count() == 3
-        assert article.locator('[data-preview-action="toggle"]').count() == 0
-        assert article.locator('[data-preview-action="open"]').inner_text() == "Open note"
-        intro = article.locator(".note-preview").evaluate("el => ({text: el.querySelector('.jd-line')?.textContent || '', bottom: el.querySelector('.jd-line').getBoundingClientRect().bottom - el.getBoundingClientRect().top, cap: parseFloat(el.style.maxHeight)})")
-        assert intro["text"].startswith("Long article sentence.") and intro["text"].endswith("…"), intro
-        assert intro["bottom"] <= intro["cap"] / 2 + 1, intro
+        assert state(article)["mode"] == "text" and article.get_by_role("checkbox").count() == 0
+        assert article.locator('[data-preview-action="open"]').text_content() == "Open note"
+        intro = article.locator(".note-preview").text_content()
+        assert intro.startswith("Long article sentence.") and intro.endswith("…"), intro[-60:]
         shots = Path(tempfile.gettempdir()) / "kilo" / "compact-card-checks"
         shots.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(shots / "joplin-desktop.png"), full_page=True)
@@ -86,7 +98,8 @@ def main():
         for width, height, size in [(390, 844, "15px"), (1200, 900, "30px"), (844, 390, "15px")]:
             page.set_viewport_size({"width": width, "height": height})
             # The preview is sized in rem, so larger text means a larger root font.
-            page.locator("html").evaluate("(el,size)=>el.style.fontSize=size", size)
+            # A zoom or font change resizes the window in Joplin; headless Edge after a screenshot only delivers that event.
+            page.locator("html").evaluate("(el,size)=>{el.style.fontSize=size;dispatchEvent(new Event('resize'))}", size)
             page.wait_for_timeout(300)
             measured = page.locator(".note-preview .jd-task").first.evaluate("el=>parseFloat(getComputedStyle(el).fontSize)")
             task_font.setdefault(size, measured)
@@ -100,7 +113,7 @@ def main():
             if width == 390:
                 page.screenshot(path=str(shots / "joplin-mobile.png"), full_page=True)
         assert not errors, errors
-        print("Joplin synthetic board: 0/1/5/6/10/11/100, source line 10, mixed article, resize and large text PASS")
+        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed = text, tag line, article, resize and large text PASS")
         browser.close()
 
 

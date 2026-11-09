@@ -30,7 +30,6 @@ let platform = 'desktop';
 let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
-let expandedPreviews: string[] = [];
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -175,8 +174,7 @@ async function loadBoard() {
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
 		.map((note) => toMeta(note, tags.get(note.id) || [], editedToTop));
-	expandedPreviews = expandedPreviews.filter(id => cards.some(card => card.id === id));
-	return { cards, expandedPreviews, scroll: boardScroll, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
+	return { cards, scroll: boardScroll, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
@@ -328,7 +326,6 @@ async function answer(message: any) {
 	case 'previews': return Promise.all(message.ids.map(preview));
 	case 'search': return searchNotes(message.text);
 	case 'open':
-		if (Array.isArray(message.expandedPreviews)) expandedPreviews = message.expandedPreviews.filter((id: unknown): id is string => typeof id === 'string');
 		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
 		await joplin.commands.execute('openNote', message.id);
 		return true;

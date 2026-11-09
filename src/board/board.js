@@ -1,5 +1,5 @@
 import { noteUrls, previewLines, urlHost } from './note.js';
-import { cardPreview } from './card-preview.js';
+import { cardPreview, checklistOnly, tagOnly } from './card-preview.js';
 import { planMove, sortCards } from './order.js';
 import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
@@ -9,7 +9,7 @@ const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
 const STRINGS = {
   en: {
-    moreTasks: 'More', lessTasks: 'Less', openNote: (n) => n ? `Open note - ${n} more ${n === 1 ? 'task' : 'tasks'}` : 'Open note',
+    checkedItems: (n) => `+ ${n} checked ${n === 1 ? 'item' : 'items'}`, openNote: (n) => n ? `Open note - ${n} more ${n === 1 ? 'task' : 'tasks'}` : 'Open note',
     search: 'Search your notes', allNotebooks: 'All notebooks', allTags: 'All', takeNote: 'Take a note…', title: 'Title',
     close: 'Close', savesTo: 'Saves to', pinned: 'Pinned', others: 'Others', pin: 'Pin', unpin: 'Unpin', color: 'Color',
     noNotes: 'No notes yet. Take your first note above.', noMatch: 'No notes match.', empty: 'Empty note',
@@ -38,7 +38,7 @@ const STRINGS = {
     connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
   },
   nl: {
-    moreTasks: 'Meer', lessTasks: 'Minder', openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
+    checkedItems: (n) => `+ ${n} ${n === 1 ? 'afgevinkt item' : 'afgevinkte items'}`, openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
     search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
     close: 'Sluiten', savesTo: 'Komt in', pinned: 'Vastgezet', others: 'Overige', pin: 'Vastzetten', unpin: 'Losmaken', color: 'Kleur',
     noNotes: 'Nog geen notities. Maak hierboven je eerste notitie.', noMatch: 'Geen notities gevonden.', empty: 'Lege notitie',
@@ -101,7 +101,9 @@ let swallowClick = false;
 // Where to land when the board comes back from a note: { id, top, y, shown }, used once by the first render.
 let restore = null;
 const previews = new Map();
-const expandedPreviews = new Set();
+// The task just ticked on a card stays a moment as ☑, then joins "+ N checked items" (like Keep).
+const TICK_SHOWN_MS = 400;
+let justTicked;
 const cardPreviews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
 const state = { cloud: null, cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
@@ -188,7 +190,6 @@ async function load() {
     return;
   }
   if (!els) {
-    for (const id of data.expandedPreviews || []) expandedPreviews.add(id);
     if (data.scroll && data.scroll.y > 0) {
       restore = data.scroll;
       // The board stays hidden until it is back at its old place, so it does not show the top first and then jump.
@@ -208,7 +209,6 @@ async function load() {
   if (same === lastData) return;
   lastData = same;
   Object.assign(state, { cards: data.cards, folders: data.folders, drawers: data.drawers || [], paperTipClosed: !!data.paperTipClosed, boardFolder: data.boardFolder });
-  for (const id of expandedPreviews) if (!state.cards.some((c) => c.id === id)) expandedPreviews.delete(id);
   if (state.query.trim()) runSearch();
   renderAll(false);
 }
@@ -709,13 +709,16 @@ function cardEl(c) {
   if (lines.length) {
     const preview = h('div', { class: 'note-preview' });
     card.append(preview);
+    // Like Keep: only a note of nothing but tasks is a checklist card; elsewhere a task reads as ☐/☑ text.
+    const isTask = (line) => line.line !== undefined, isMeta = (line) => !line.text.trim() || tagOnly(line.text);
+    const asText = !checklistOnly(lines, isTask, isMeta);
     cardPreviews.set(c.id, cardPreview(preview, lines, {
-      isTask: (line) => line.line !== undefined,
-      render: (line) => line.line === undefined ? h('div', { class: 'jd-line', text: line.text || ' ' }) : task(c, line),
-      expanded: () => expandedPreviews.has(c.id),
-      toggle: () => expandedPreviews.has(c.id) ? expandedPreviews.delete(c.id) : expandedPreviews.add(c.id),
+      isTask, isMeta, isChecked: (line) => line.checked,
+      lingering: (line) => justTicked?.id === c.id && justTicked.line === line.line ? Math.max(0, TICK_SHOWN_MS - (performance.now() - justTicked.at)) : 0,
+      render: (line) => !isTask(line) ? h('div', { class: 'jd-line', text: line.text || ' ' })
+        : asText ? h('div', { class: 'jd-line', text: `${line.checked ? '☑' : '☐'} ${line.text}` }) : task(c, line),
       height: () => window.innerHeight,
-      more: t.moreTasks, less: t.lessTasks, openLabel: t.openNote, open: () => openCard(c.id),
+      openLabel: t.openNote, checkedLabel: t.checkedItems, open: () => openCard(c.id),
     }));
   }
   if (!c.title && !lines.length && !shownNote.image && !shownNote.audio) card.append(h('p', { class: 'jd-muted', text: t.empty }));
@@ -753,7 +756,7 @@ function openCard(id) {
   const y = plain ? (document.scrollingElement || document.documentElement).scrollTop : 0;
   const card = els.grid.querySelector(`[data-id="${id}"]`);
   const top = card ? card.getBoundingClientRect().top : 0;
-  post({ type: 'open', id, y, top, shown, expandedPreviews: [...expandedPreviews] }).catch(() => toast(t.failed));
+  post({ type: 'open', id, y, top, shown }).catch(() => toast(t.failed));
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.
@@ -767,7 +770,11 @@ function task(c, line) {
   // ☐/☑ are shapes, not colours, so the state is clear without colour vision.
   return h('div', { class: `jd-task${line.checked ? ' is-done' : ''}` },
     h('button', { type: 'button', class: 'jd-check', role: 'checkbox', 'aria-checked': String(line.checked), 'aria-label': line.text,
-      text: line.checked ? '☑' : '☐', onclick: (e) => { e.stopPropagation(); update({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked, expectedUpdated: c.updated }); } }),
+      text: line.checked ? '☑' : '☐', onclick: (e) => {
+        e.stopPropagation();
+        justTicked = line.checked ? undefined : { id: c.id, line: line.line, at: performance.now() };
+        update({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked, expectedUpdated: c.updated });
+      } }),
     h('span', { text: line.text, 'data-preview-task-text': '' }));
 }
 
