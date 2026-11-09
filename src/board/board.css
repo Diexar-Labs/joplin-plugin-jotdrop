@@ -64,9 +64,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .card-cover { display: block; width: calc(100% + 30px); max-height: 220px; margin: -14px -15px 10px; object-fit: cover; border-radius: 10px 10px 0 0; }
 .note-card h3 { margin: 0 0 6px; padding-right: 26px; font-family: var(--heading); font-size: 1.04rem; font-weight: 700; letter-spacing: -.01em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-.note-preview { max-height: 330px; overflow: hidden; font-size: .93rem; }
+.note-preview { overflow: hidden; font-size: .93rem; }
 .jd-line { white-space: pre-wrap; min-height: 1.2em; }
 .jd-task { display: flex; align-items: flex-start; gap: 4px; }
+.jd-task > span { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.compact-preview-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; margin-top: 6px; }
+.compact-preview-controls[hidden] { display: none; }
+.compact-preview-controls button { min-height: 32px; border: 0; border-radius: 6px; padding: 4px 6px; background: transparent; cursor: pointer; font-size: .85rem; }
+.compact-preview-controls button:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 .jd-check { flex: none; width: 26px; height: 26px; margin: -3px 0 -3px -5px; padding: 0; border: 0; background: transparent; font-size: 1.15rem; line-height: 1; cursor: pointer; }
 .jd-task.is-done span { text-decoration: line-through; color: var(--muted); }
 .jd-muted { margin: 0; color: var(--muted); font-style: italic; }
@@ -104,8 +109,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) { .card-paper, .jd-toast, .jd-totop, .card-pin, .card-actions { transition: none; } }
 /* On a phone a card shows a Keep-sized peek of the note, not the whole note. */
 :root[data-platform="mobile"] body { font-size: 14px; }
-:root[data-platform="mobile"] .note-preview { max-height: 190px; }
-.note-preview.has-tasks, :root[data-platform="mobile"] .note-preview.has-tasks { max-height: none; }
 :root[data-platform="mobile"] .card-cover { max-height: 150px; }
 @media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-search { max-width: none; } }
 :root[data-platform="mobile"] .jd-cloud { display: none; }

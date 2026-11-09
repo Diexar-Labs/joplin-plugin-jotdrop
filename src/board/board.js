@@ -1,4 +1,5 @@
 import { noteUrls, previewLines, urlHost } from './note.js';
+import { cardPreview } from './card-preview.js';
 import { planMove, sortCards } from './order.js';
 import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
@@ -8,6 +9,7 @@ const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
 const STRINGS = {
   en: {
+    moreTasks: 'More', lessTasks: 'Less', openNote: (n) => n ? `Open note - ${n} more ${n === 1 ? 'task' : 'tasks'}` : 'Open note',
     search: 'Search your notes', allNotebooks: 'All notebooks', allTags: 'All', takeNote: 'Take a note…', title: 'Title',
     close: 'Close', savesTo: 'Saves to', pinned: 'Pinned', others: 'Others', pin: 'Pin', unpin: 'Unpin', color: 'Color',
     noNotes: 'No notes yet. Take your first note above.', noMatch: 'No notes match.', empty: 'Empty note',
@@ -36,6 +38,7 @@ const STRINGS = {
     connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
   },
   nl: {
+    moreTasks: 'Meer', lessTasks: 'Minder', openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
     search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
     close: 'Sluiten', savesTo: 'Komt in', pinned: 'Vastgezet', others: 'Overige', pin: 'Vastzetten', unpin: 'Losmaken', color: 'Kleur',
     noNotes: 'Nog geen notities. Maak hierboven je eerste notitie.', noMatch: 'Geen notities gevonden.', empty: 'Lege notitie',
@@ -98,6 +101,8 @@ let swallowClick = false;
 // Where to land when the board comes back from a note: { id, top, y, shown }, used once by the first render.
 let restore = null;
 const previews = new Map();
+const expandedPreviews = new Set();
+const cardPreviews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
 const state = { cloud: null, cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
 
@@ -183,6 +188,7 @@ async function load() {
     return;
   }
   if (!els) {
+    for (const id of data.expandedPreviews || []) expandedPreviews.add(id);
     if (data.scroll && data.scroll.y > 0) {
       restore = data.scroll;
       // The board stays hidden until it is back at its old place, so it does not show the top first and then jump.
@@ -202,6 +208,7 @@ async function load() {
   if (same === lastData) return;
   lastData = same;
   Object.assign(state, { cards: data.cards, folders: data.folders, drawers: data.drawers || [], paperTipClosed: !!data.paperTipClosed, boardFolder: data.boardFolder });
+  for (const id of expandedPreviews) if (!state.cards.some((c) => c.id === id)) expandedPreviews.delete(id);
   if (state.query.trim()) runSearch();
   renderAll(false);
 }
@@ -233,7 +240,12 @@ function replaceCard(card) {
   if (moved) return renderAll(false);
   // A tick or a colour keeps the card in its place (Eric, 26 Oct: cards stay put).
   const old = els.grid.querySelector(`[data-id="${card.id}"]`);
-  if (old) old.replaceWith(cardEl(card));
+  if (old) {
+    cardPreviews.get(card.id)?.destroy();
+    const replacement = cardEl(card);
+    old.replaceWith(replacement);
+    cardPreviews.get(card.id)?.fit();
+  }
 }
 
 // ---- filters ----
@@ -634,6 +646,8 @@ async function renderGrid(fromTop) {
   if (others.length) parts.push(boxes.others);
   if (!cards.length && !emptyDrawer) parts.push(h('p', { class: 'jd-empty', text: state.archive ? t.archiveEmpty : (state.cards.length ? t.noMatch : t.noNotes) }));
   els.grid.replaceChildren(...parts);
+  for (const preview of cardPreviews.values()) preview.destroy();
+  cardPreviews.clear();
   order = all;
   shown = 0;
   place(count);
@@ -657,6 +671,7 @@ function place(count) {
     let best = cols[0];
     for (const col of cols) if (col.offsetHeight < best.offsetHeight) best = col;
     best.append(cardEl(card));
+    cardPreviews.get(card.id)?.fit();
   }
   shown += count;
 }
@@ -680,7 +695,7 @@ async function loadMore() {
 
 function cardEl(c) {
   const shownNote = previews.get(c.id) || { body: '', image: null };
-  const lines = previewLines(shownNote.body, c.title);
+  const lines = previewLines(shownNote.body, c.title, Infinity, Infinity);
   // One chip per site: three links to the same site would show three identical chips.
   const hosts = new Set();
   const urls = noteUrls(shownNote.body).filter((url) => !hosts.has(urlHost(url)) && hosts.add(urlHost(url))).slice(0, 3);
@@ -692,9 +707,16 @@ function cardEl(c) {
   if (c.title) card.append(h('h3', { text: c.title }));
   if (shownNote.audio) card.append(h('audio', { class: 'card-audio', controls: true, preload: 'metadata', src: shownNote.audio }));
   if (lines.length) {
-    card.append(h('div', { class: `note-preview${lines.some((line) => line.line !== undefined) ? ' has-tasks' : ''}` }, lines.map((line) => (line.line === undefined
-      ? h('div', { class: 'jd-line', text: line.text || ' ' })
-      : task(c, line)))));
+    const preview = h('div', { class: 'note-preview' });
+    card.append(preview);
+    cardPreviews.set(c.id, cardPreview(preview, lines, {
+      isTask: (line) => line.line !== undefined,
+      render: (line) => line.line === undefined ? h('div', { class: 'jd-line', text: line.text || ' ' }) : task(c, line),
+      expanded: () => expandedPreviews.has(c.id),
+      toggle: () => expandedPreviews.has(c.id) ? expandedPreviews.delete(c.id) : expandedPreviews.add(c.id),
+      height: () => window.innerHeight,
+      more: t.moreTasks, less: t.lessTasks, openLabel: t.openNote, open: () => openCard(c.id),
+    }));
   }
   if (!c.title && !lines.length && !shownNote.image && !shownNote.audio) card.append(h('p', { class: 'jd-muted', text: t.empty }));
   const expires = expiresEl(c);
@@ -731,7 +753,7 @@ function openCard(id) {
   const y = plain ? (document.scrollingElement || document.documentElement).scrollTop : 0;
   const card = els.grid.querySelector(`[data-id="${id}"]`);
   const top = card ? card.getBoundingClientRect().top : 0;
-  post({ type: 'open', id, y, top, shown }).catch(() => toast(t.failed));
+  post({ type: 'open', id, y, top, shown, expandedPreviews: [...expandedPreviews] }).catch(() => toast(t.failed));
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.
@@ -745,8 +767,8 @@ function task(c, line) {
   // ☐/☑ are shapes, not colours, so the state is clear without colour vision.
   return h('div', { class: `jd-task${line.checked ? ' is-done' : ''}` },
     h('button', { type: 'button', class: 'jd-check', role: 'checkbox', 'aria-checked': String(line.checked), 'aria-label': line.text,
-      text: line.checked ? '☑' : '☐', onclick: (e) => { e.stopPropagation(); update({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked }); } }),
-    h('span', { text: line.text }));
+      text: line.checked ? '☑' : '☐', onclick: (e) => { e.stopPropagation(); update({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked, expectedUpdated: c.updated }); } }),
+    h('span', { text: line.text, 'data-preview-task-text': '' }));
 }
 
 function dueBadge(c) {

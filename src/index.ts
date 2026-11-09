@@ -30,6 +30,7 @@ let platform = 'desktop';
 let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
+let expandedPreviews: string[] = [];
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -174,7 +175,8 @@ async function loadBoard() {
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
 		.map((note) => toMeta(note, tags.get(note.id) || [], editedToTop));
-	return { cards, scroll: boardScroll, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
+	expandedPreviews = expandedPreviews.filter(id => cards.some(card => card.id === id));
+	return { cards, expandedPreviews, scroll: boardScroll, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
@@ -232,8 +234,9 @@ async function setPaper(id: string, drawer: string, expires: string, warn: strin
 
 // The API has no compare-and-swap, so the body is read again right before the write and the
 // checklist line must still be a checklist line (same rule as the website's toggleTask).
-async function toggleTask(id: string, line: number, checked: boolean) {
-	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body'] });
+async function toggleTask(id: string, line: number, checked: boolean, expectedUpdated: number) {
+	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time', 'deleted_time'] });
+	if (!Number.isInteger(line) || line < 0 || Number(note.updated_time) !== expectedUpdated || note.deleted_time) throw new Error('changed');
 	const lines = String(note.body || '').split('\n');
 	if (!/^\s*[-*+] \[[ xX]\] /.test(lines[line] || '')) throw new Error('changed');
 	lines[line] = lines[line].replace(/^(\s*[-*+] \[)[ xX](\] )/, `$1${checked ? 'x' : ' '}$2`);
@@ -325,11 +328,12 @@ async function answer(message: any) {
 	case 'previews': return Promise.all(message.ids.map(preview));
 	case 'search': return searchNotes(message.text);
 	case 'open':
+		if (Array.isArray(message.expandedPreviews)) expandedPreviews = message.expandedPreviews.filter((id: unknown): id is string => typeof id === 'string');
 		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
 		await joplin.commands.execute('openNote', message.id);
 		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
-	case 'toggleTask': return toggleTask(message.id, message.line, !!message.checked);
+	case 'toggleTask': return toggleTask(message.id, message.line, !!message.checked, Number(message.expectedUpdated));
 	case 'setPinned':
 		if (message.pinned) await joplin.data.userDataSet(ModelType.Note, message.id, 'pinned', true);
 		else await joplin.data.userDataDelete(ModelType.Note, message.id, 'pinned');

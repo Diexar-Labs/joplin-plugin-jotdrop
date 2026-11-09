@@ -76,15 +76,17 @@ export function urlHost(url) {
  */
 const TASK_LINE = /^\s*[-*+] \[[ xX]\] /m;
 
-export function previewLines(body, title = '', max = 12) {
+export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   const out = [];
   const lines = body.split('\n');
+  const frontmatterEnd = lines[0]?.trim() === '---' ? lines.findIndex((line, i) => i > 0 && line.trim() === '---') : -1;
   const plainTitle = normalizeHeading(title);
   let fence = '';
   let started = false;
-  // Every task stays on the card, however many, so all of them tick from the board (Eric, 7 nov).
+  let tasks = 0;
   const limit = TASK_LINE.test(body) ? Infinity : max;
   for (let i = 0; i < lines.length && out.length < limit; i++) {
+    if (i <= frontmatterEnd) continue;
     const line = lines[i];
     // Joplin notes often repeat their title as a first heading; like JotDrop elsewhere, the card shows it once.
     if (!started && line.trim()) {
@@ -96,7 +98,10 @@ export function previewLines(body, title = '', max = 12) {
     if (marker) { if (!fence) fence = marker; else if (marker[0] === fence[0] && marker.length >= fence.length) fence = ''; continue; }
     if (fence) { out.push({ text: line }); continue; }
     const task = /^\s*[-*+] \[([ xX])\] (.*)$/.exec(line);
-    if (task) { out.push({ line: i, checked: task[1] !== ' ', text: plainPreviewText(task[2]) }); continue; }
+    if (task) {
+      if (tasks++ >= maxTasks) break;
+      out.push({ line: i, checked: task[1] !== ' ', text: plainPreviewText(task[2]) }); continue;
+    }
     if (!line.trim()) { if (out.length && out[out.length - 1].text !== '') out.push({ text: '' }); continue; }
     const cleaned = line.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<img\b[^>]*>/gi, '');
     if (!cleaned.trim()) continue;
