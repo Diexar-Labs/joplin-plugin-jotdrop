@@ -5,6 +5,7 @@ import { endLink, hasListLink, makeLink, setupShareLinks, shareInfo } from './sh
 import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
 import { boardRank } from './board/order.js';
+import { fileChip, resourceLinks } from './fileChips.mjs';
 import { registerAiSettings, setupAsk } from './ai';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
@@ -137,11 +138,40 @@ function keepTasks(body: string): string {
 	return /^\s*[-*+] \[[ xX]\] /m.test(body) ? body : body.slice(0, PREVIEW_CHARS);
 }
 
+// Per resource: its chip, or null for a photo or a sound. Not kept: a link to a note, and a file without its size yet
+// (still coming by sync), so it gets its chip and size once it is here.
+const chipCache = new Map<string, any>();
+
+// Every other attached file (a PDF, a document) as a chip with name and size, like the website; its link is not shown as text as well.
+async function attachedFiles(body: string) {
+	const files: any[] = [];
+	const links: string[] = [];
+	for (const { link, id, text } of resourceLinks(body)) {
+		let chip = chipCache.get(id);
+		if (chip === undefined) {
+			try {
+				const resource = await joplin.data.get(['resources', id], { fields: ['id', 'title', 'mime', 'file_extension', 'size'] });
+				chip = resource ? fileChip(resource, text) : undefined;
+				if (chip === null || chip?.size) chipCache.set(id, chip);
+			} catch {
+				// A link to a note, or a resource that is gone: no chip.
+			}
+		}
+		if (!chip) continue;
+		links.push(link);
+		if (!files.some((file) => file.id === chip.id)) files.push(chip);
+	}
+	return { files, links };
+}
+
 async function preview(id: string) {
 	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time'] });
 	const body: string = note.body || '';
 	const audio = await firstAudio(body);
-	return { id, updated: note.updated_time, body: keepTasks(audio ? body.replace(audio.link, '') : body), image: await firstImage(body), audio: audio?.url || null };
+	const { files, links } = await attachedFiles(body);
+	let shown = audio ? body.replace(audio.link, '') : body;
+	for (const link of links) shown = shown.replace(link, '');
+	return { id, updated: note.updated_time, body: keepTasks(shown), image: await firstImage(body), audio: audio?.url || null, files };
 }
 
 async function tagMap(): Promise<Map<string, string[]>> {
@@ -345,6 +375,11 @@ async function answer(message: any) {
 		await joplin.commands.execute('openNote', message.id);
 		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
+	// Joplin opens an attached file the way it does from the note: in the computer's own app for that file.
+	case 'openFile':
+		if (!/^[0-9a-f]{32}$/.test(String(message.id))) throw new Error('id');
+		await joplin.commands.execute('openItem', `:/${message.id}`);
+		return true;
 	case 'toggleTask': return toggleTask(message.id, message.line, !!message.checked, Number(message.expectedUpdated));
 	case 'setPinned':
 		if (message.pinned) await joplin.data.userDataSet(ModelType.Note, message.id, 'pinned', true);

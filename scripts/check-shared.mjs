@@ -32,7 +32,7 @@ if (differs) {
 }
 
 // src/cloud-shared/ holds whole copies of JotDrop's cloud code: they must match JotDrop main to the byte.
-const CLOUD_FILES = { 'client.mjs': 'cloud/shared/client.mjs', 'crypto.mjs': 'cloud/shared/crypto.mjs', 'merge.mjs': 'cloud/shared/merge.mjs', 'sync.mjs': 'cloud/shared/sync.mjs', 'note.mjs': 'cloud/web/note.mjs', 'drawing.mjs': 'cloud/shared/drawing.mjs', 'drawing-editor.mjs': 'cloud/shared/drawing-editor.mjs', 'paper.mjs': 'cloud/shared/paper.mjs', 'expiry.mjs': 'cloud/shared/expiry.mjs', 'links.mjs': 'cloud/shared/links.mjs', 'list-links.mjs': 'cloud/shared/list-links.mjs', 'diff.mjs': 'cloud/shared/diff.mjs', 'ai-web.mjs': 'cloud/web/ai-web.mjs' };
+const CLOUD_FILES = { 'client.mjs': 'cloud/shared/client.mjs', 'crypto.mjs': 'cloud/shared/crypto.mjs', 'merge.mjs': 'cloud/shared/merge.mjs', 'sync.mjs': 'cloud/shared/sync.mjs', 'note.mjs': 'cloud/web/note.mjs', 'drawing.mjs': 'cloud/shared/drawing.mjs', 'drawing-editor.mjs': 'cloud/shared/drawing-editor.mjs', 'paper.mjs': 'cloud/shared/paper.mjs', 'expiry.mjs': 'cloud/shared/expiry.mjs', 'links.mjs': 'cloud/shared/links.mjs', 'list-links.mjs': 'cloud/shared/list-links.mjs', 'diff.mjs': 'cloud/shared/diff.mjs', 'ai-web.mjs': 'cloud/web/ai-web.mjs', 'filekinds.json': 'cloud/shared/filekinds.json' };
 // Ask JotDrop's shared core (cloud/shared/ai), in src/cloud-shared/ai/.
 for (const name of ['assistant', 'providers', 'tools', 'prompt', 'context', 'redact', 'markdown']) CLOUD_FILES[`ai/${name}.mjs`] = `cloud/shared/ai/${name}.mjs`;
 // Here the copies sit in one folder, so the web app's ai-web.mjs reaches '../shared/x' as './x'. Nothing else may differ.

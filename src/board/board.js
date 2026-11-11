@@ -5,6 +5,7 @@ import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mj
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
 import { DEFAULT_WARN, INTRO, PAPER_DRAWER, WARN_OPTIONS, drawerName, expiresBadge, inDrawer, isPaperDrawer, shortDate } from '../cloud-shared/paper.mjs';
 import { createAsk } from './ask.js';
+import { sizeText } from '../fileChips.mjs';
 
 const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
@@ -37,6 +38,7 @@ const STRINGS = {
     ends: (d) => `Ends ${d}`, untilRemoved: 'Until you remove it', live: (ends, updated) => `Live list, ${ends ? `ends ${ends}` : 'until you end it'}, updated ${updated}`, notHere: 'note not found in this Joplin',
     ticked: (by, item) => `✓ ${by} ticked "${item}"`, addedItem: (by, item) => `${by} added "${item}"`, justNow: 'just now', minAgo: (n) => `${n} min. ago`, hrAgo: (n) => `${n} hr. ago`,
     connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
+    openFile: (name) => `Open ${name}`, moreFiles: (n) => (n === 1 ? '+ 1 file' : `+ ${n} files`),
     ask: 'Ask JotDrop', askTitle: 'Ask JotDrop: AI with your own key', askNote: 'Ask JotDrop about this note…', summarize: 'Summarize with AI',
   },
   nl: {
@@ -80,6 +82,7 @@ const STRINGS = {
     ends: (d) => `Stopt ${d}`, untilRemoved: 'Tot je hem weghaalt', live: (ends, updated) => `Live lijst, ${ends ? `stopt ${ends}` : 'tot je hem stopt'}, bijgewerkt ${updated}`, notHere: 'notitie niet gevonden in deze Joplin',
     ticked: (by, item) => `✓ ${by} vinkte "${item}" af`, addedItem: (by, item) => `${by} voegde "${item}" toe`, justNow: 'zojuist', minAgo: (n) => `${n} min. geleden`, hrAgo: (n) => `${n} uur geleden`,
     connectFirst: 'Koppel eerst JotDrop Cloud. Daarna kun je een notitie via een link delen.', plusSite: 'JotDrop Plus op de website', liveBadge: 'Live lijstlink',
+    openFile: (name) => `${name} openen`, moreFiles: (n) => (n === 1 ? '+ 1 bestand' : `+ ${n} bestanden`),
     ask: 'Vraag JotDrop', askTitle: 'Vraag JotDrop: AI met je eigen sleutel', askNote: 'Vraag JotDrop over deze notitie…', summarize: 'Samenvatten met AI',
   },
 };
@@ -147,6 +150,12 @@ const PLUS = 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z';
 const SHARE = 'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z';
 // Sparkles for Ask JotDrop, the same sign as in the web app and Obsidian.
 const SPARKLES = 'M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z';
+// File chips, by kind (cloud/shared/filekinds.json); the file name next to the icon says the same in words.
+const FILE_ICONS = {
+  pdf: 'M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z',
+  video: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
+  file: 'M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z',
+};
 const LINK = 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z';
 
 async function post(message) {
@@ -730,7 +739,9 @@ function cardEl(c) {
       openLabel: t.openNote, checkedLabel: t.checkedItems, open: () => openCard(c.id),
     }));
   }
-  if (!c.title && !lines.length && !shownNote.image && !shownNote.audio) card.append(h('p', { class: 'jd-muted', text: t.empty }));
+  const files = shownNote.files || [];
+  if (files.length) card.append(fileChips(c, files));
+  if (!c.title && !lines.length && !shownNote.image && !shownNote.audio && !files.length) card.append(h('p', { class: 'jd-muted', text: t.empty }));
   const expires = expiresEl(c);
   if (expires) card.append(expires);
   if (c.isTodo && c.due) card.append(dueBadge(c));
@@ -785,6 +796,28 @@ function task(c, line) {
         update({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked, expectedUpdated: c.updated });
       } }),
     h('span', { text: line.text, 'data-preview-task-text': '' }));
+}
+
+// Like the website, Obsidian and Android: up to three files as chips with name and size, the rest as "+ N files".
+// On the desktop a chip opens the file in the computer's own app; on a phone it opens the note, where Joplin shows it.
+// "+ N files" passes through to the card click: the note shows them all.
+const FILE_CHIPS_VISIBLE = 3;
+function fileChips(c, files) {
+  const desktop = document.documentElement.dataset.platform === 'desktop';
+  const chips = files.slice(0, FILE_CHIPS_VISIBLE).map((file) => {
+    const label = file.size ? `${t.openFile(file.name)}, ${sizeText(file.size)}` : t.openFile(file.name);
+    return h('button', { type: 'button', class: 'file-chip', title: label, 'aria-label': label,
+      onclick: (e) => {
+        e.stopPropagation();
+        if (desktop) post({ type: 'openFile', id: file.id }).catch(() => toast(t.failed));
+        else openCard(c.id);
+      } },
+    icon(FILE_ICONS[file.kind] || FILE_ICONS.file),
+    h('span', { class: 'file-chip-name', text: file.name }),
+    file.size ? h('span', { class: 'file-chip-size', text: `· ${sizeText(file.size)}` }) : null);
+  });
+  const rest = files.length - FILE_CHIPS_VISIBLE;
+  return h('div', { class: 'jd-files' }, chips, rest > 0 ? h('span', { class: 'file-more', text: t.moreFiles(rest) }) : null);
 }
 
 function dueBadge(c) {

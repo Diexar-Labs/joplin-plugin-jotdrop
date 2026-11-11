@@ -15,10 +15,17 @@ def main():
     bodies["mixed"] = "Some tips first.\n\n- [ ] MA\n- [x] MB"
     bodies["tagged"] = "- [ ] milk\n- [ ] bread\n\n#groceries"
     bodies["article"] = "Long article sentence. " * 300 + "\n- [ ] A\n- [x] B\n- [ ] C"
+    # Attached files other than photos and sounds: up to three chips with name and size, then "+ N files".
+    bodies["files"] = "Quote for the roof"
+    bodies["onefile"] = ""
+    pdf = {"id": "f" * 32, "name": "Offer for the new roof with a very long file name.pdf", "kind": "pdf", "size": 2 * 1048576 + 5}
+    files = {"files": [pdf, {"id": "1" * 32, "name": "budget.xlsx", "kind": "file", "size": 3000}, {"id": "2" * 32, "name": "walk.mp4", "kind": "video", "size": 0},
+                       {"id": "3" * 32, "name": "a.zip", "kind": "file", "size": 1}, {"id": "4" * 32, "name": "b.txt", "kind": "file", "size": 1}],
+             "onefile": [{"id": "5" * 32, "name": "scan.pdf", "kind": "pdf", "size": 40000}]}
     cards = [{"id": key, "title": key, "color": "default", "tags": [], "pinned": False, "archived": False, "updated": 1, "rank": 1000 - i, "folderId": "f"} for i, key in enumerate(bodies)]
     bridge = """
       window.data = DATA; window.bodies = BODIES; window.messages = [];
-      const preview = id => ({id, body:bodies[id], updated:data.cards.find(c=>c.id===id).updated});
+      const preview = id => ({id, body:bodies[id], updated:data.cards.find(c=>c.id===id).updated, files:FILES[id]||[]});
       window.webviewApi = {
         onMessage(cb) { window.changed = () => cb({message:{type:'changed'}}); },
         async postMessage(m) {
@@ -36,7 +43,7 @@ def main():
           return {};
         }
       };
-    """.replace("DATA", json.dumps({"locale": "en", "platform": "desktop", "cards": cards, "folders": [{"id": "f", "title": "Synthetic"}], "boardFolder": "f"})).replace("BODIES", json.dumps(bodies))
+    """.replace("DATA", json.dumps({"locale": "en", "platform": "desktop", "cards": cards, "folders": [{"id": "f", "title": "Synthetic"}], "boardFolder": "f"})).replace("BODIES", json.dumps(bodies)).replace("FILES", json.dumps(files))
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="msedge")
         page = browser.new_page(viewport={"width": 1200, "height": 1000})
@@ -91,6 +98,25 @@ def main():
         assert article.locator('[data-preview-action="open"]').text_content() == "Open note"
         intro = article.locator(".note-preview").text_content()
         assert intro.startswith("Long article sentence.") and intro.endswith("…"), intro[-60:]
+        chips = page.locator('[data-id="files"] .file-chip')
+        assert chips.count() == 3, chips.count()
+        assert chips.nth(0).get_attribute("aria-label") == f"Open {pdf['name']}, 2.0 MiB", chips.nth(0).get_attribute("aria-label")
+        assert chips.nth(0).locator(".file-chip-size").text_content() == "· 2.0 MiB"
+        assert chips.nth(1).locator(".file-chip-size").text_content() == "· 3 KiB"
+        assert chips.nth(2).locator(".file-chip-size").count() == 0 and chips.nth(2).get_attribute("aria-label") == "Open walk.mp4"
+        assert all(chips.nth(i).locator("svg").count() == 1 for i in range(3))
+        # A long name is cut off with an ellipsis inside the card, the size stays visible.
+        box = chips.nth(0).evaluate("el=>({cut:el.querySelector('.file-chip-name').scrollWidth>el.querySelector('.file-chip-name').clientWidth, inside:el.closest('.note-card').getBoundingClientRect().right-el.getBoundingClientRect().right})")
+        assert box["cut"] and box["inside"] >= 0, box
+        assert page.locator('[data-id="files"] .file-more').text_content() == "+ 2 files"
+        before = page.evaluate("messages.length")
+        chips.nth(0).click()
+        page.wait_for_function("id => messages.some(m=>m.type==='openFile'&&m.id===id)", arg=pdf["id"])
+        assert not page.evaluate("n => messages.slice(n).some(m=>m.type==='open')", before)
+        page.locator('[data-id="files"] .file-more').click()
+        page.wait_for_function("n => messages.slice(n).some(m=>m.type==='open'&&m.id==='files')", arg=before)
+        one = page.locator('[data-id="onefile"]')
+        assert one.locator(".file-chip").count() == 1 and one.locator(".file-more").count() == 0 and one.locator(".jd-muted").count() == 0
         shots = Path(tempfile.gettempdir()) / "kilo" / "compact-card-checks"
         shots.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(shots / "joplin-desktop.png"), full_page=True)
@@ -106,14 +132,14 @@ def main():
             assert abs(measured - task_font[size]) < .01, (size, measured, task_font)
             if "15px" in task_font and "30px" in task_font:
                 assert abs(task_font["30px"] / task_font["15px"] - 2) < .01, task_font
-            for card in page.locator(".note-card").all():
+            for card in page.locator(".note-card:has(.note-preview)").all():
                 sizes = card.locator(".note-preview").evaluate("el=>({h:el.offsetHeight,cap:parseFloat(el.style.maxHeight),rows:[...el.querySelectorAll('.jd-task')].map(r=>r.getBoundingClientRect().bottom-el.getBoundingClientRect().bottom)})")
                 assert sizes["h"] <= sizes["cap"] + 1, sizes
                 assert all(bottom <= 1 for bottom in sizes["rows"]), sizes
             if width == 390:
                 page.screenshot(path=str(shots / "joplin-mobile.png"), full_page=True)
         assert not errors, errors
-        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed = text, tag line, article, resize and large text PASS")
+        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed = text, tag line, article, file chips, resize and large text PASS")
         browser.close()
 
 
