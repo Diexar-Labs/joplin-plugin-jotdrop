@@ -4,6 +4,7 @@ import { planMove, sortCards } from './order.js';
 import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
 import { DEFAULT_WARN, INTRO, PAPER_DRAWER, WARN_OPTIONS, drawerName, expiresBadge, inDrawer, isPaperDrawer, shortDate } from '../cloud-shared/paper.mjs';
+import { createAsk } from './ask.js';
 
 const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
@@ -36,6 +37,7 @@ const STRINGS = {
     ends: (d) => `Ends ${d}`, untilRemoved: 'Until you remove it', live: (ends, updated) => `Live list, ${ends ? `ends ${ends}` : 'until you end it'}, updated ${updated}`, notHere: 'note not found in this Joplin',
     ticked: (by, item) => `✓ ${by} ticked "${item}"`, addedItem: (by, item) => `${by} added "${item}"`, justNow: 'just now', minAgo: (n) => `${n} min. ago`, hrAgo: (n) => `${n} hr. ago`,
     connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
+    ask: 'Ask JotDrop', askTitle: 'Ask JotDrop: AI with your own key', askNote: 'Ask JotDrop about this note…', summarize: 'Summarize with AI',
   },
   nl: {
     checkedItems: (n) => `+ ${n} ${n === 1 ? 'afgevinkt item' : 'afgevinkte items'}`, openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
@@ -78,6 +80,7 @@ const STRINGS = {
     ends: (d) => `Stopt ${d}`, untilRemoved: 'Tot je hem weghaalt', live: (ends, updated) => `Live lijst, ${ends ? `stopt ${ends}` : 'tot je hem stopt'}, bijgewerkt ${updated}`, notHere: 'notitie niet gevonden in deze Joplin',
     ticked: (by, item) => `✓ ${by} vinkte "${item}" af`, addedItem: (by, item) => `${by} voegde "${item}" toe`, justNow: 'zojuist', minAgo: (n) => `${n} min. geleden`, hrAgo: (n) => `${n} uur geleden`,
     connectFirst: 'Koppel eerst JotDrop Cloud. Daarna kun je een notitie via een link delen.', plusSite: 'JotDrop Plus op de website', liveBadge: 'Live lijstlink',
+    ask: 'Vraag JotDrop', askTitle: 'Vraag JotDrop: AI met je eigen sleutel', askNote: 'Vraag JotDrop over deze notitie…', summarize: 'Samenvatten met AI',
   },
 };
 
@@ -142,6 +145,8 @@ const PENCIL = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0
 const TRAY = 'M19 3H4.99C3.88 3 3.01 3.89 3.01 5L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5c0-1.11-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z';
 const PLUS = 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z';
 const SHARE = 'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z';
+// Sparkles for Ask JotDrop, the same sign as in the web app and Obsidian.
+const SPARKLES = 'M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z';
 const LINK = 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z';
 
 async function post(message) {
@@ -149,6 +154,9 @@ async function post(message) {
   if (result && typeof result === 'object' && result.error) throw new Error(result.error);
   return result;
 }
+
+// Ask JotDrop runs in the plugin's main process; this page shows its window (ask.js).
+const askJotDrop = createAsk({ h, post, toast, openCard });
 
 function toast(text) {
   if (!els) return;
@@ -323,6 +331,10 @@ function buildShell() {
       renderAll(true);
       toast(t.drawingSaved);
     }) }, icon(PENCIL), ` ${t.drawing}`);
+  // Ask JotDrop: Joplin desktop only for now (design 5.7: Android after a test on the emulator).
+  const askChip = document.documentElement.dataset.platform === 'desktop'
+    ? h('button', { type: 'button', class: 'jd-chip jd-draw jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`)
+    : null;
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
@@ -337,7 +349,7 @@ function buildShell() {
   els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
-    h('div', { class: 'jd-filters' }, search, folder, archive, draw, cloud));
+    h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, cloud));
   document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toTop, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
@@ -738,7 +750,7 @@ function cardEl(c) {
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
       onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
-    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
+    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), askButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     openCard(c.id);
@@ -874,6 +886,23 @@ function showColors(anchor, c) {
 function closeMenu() {
   if (openMenu) openMenu.remove();
   openMenu = null;
+}
+
+// ---- Ask JotDrop (Joplin desktop) ----
+
+function askButton(c) {
+  if (document.documentElement.dataset.platform !== 'desktop') return null;
+  const button = h('button', { type: 'button', class: 'jd-act', title: t.ask, 'aria-label': t.ask, 'aria-haspopup': 'menu',
+    onclick: (e) => {
+      e.stopPropagation();
+      closeMenu();
+      const note = { id: c.id, title: c.title, listLink: c.listLink };
+      const go = (summarize) => () => { closeMenu(); askJotDrop.open({ note, summarize }); };
+      showMenu(h('div', { class: 'card-menu', role: 'menu' },
+        h('button', { type: 'button', role: 'menuitem', onclick: go(false) }, t.askNote),
+        h('button', { type: 'button', role: 'menuitem', onclick: go(true) }, t.summarize)), button);
+    } }, icon(SPARKLES));
+  return button;
 }
 
 // ---- sharing by link (Joplin desktop with JotDrop Cloud) ----
@@ -1130,6 +1159,7 @@ function start() {
   webviewApi.onMessage((event) => {
     const message = event && event.message !== undefined ? event.message : event;
     if (message && message.type === 'changed') scheduleReload();
+    else askJotDrop.onMessage(message);
   });
   load();
 }

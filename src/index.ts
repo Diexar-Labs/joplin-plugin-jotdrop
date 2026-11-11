@@ -5,6 +5,7 @@ import { endLink, hasListLink, makeLink, setupShareLinks, shareInfo } from './sh
 import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
 import { boardRank } from './board/order.js';
+import { registerAiSettings, setupAsk } from './ai';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
 // shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
@@ -310,9 +311,23 @@ async function boardFolderId() {
 	return (await allPages(['folders'], { fields: ['id'] }))[0]?.id || '';
 }
 
+// Ask JotDrop, desktop only for now (Joplin for Android: after a test on the emulator, design 5.7).
+const answerAi = setupAsk({
+	allPages,
+	isBoard: (note) => note.id === boardId || readUserData(note.user_data).board === true,
+	boardFolderId,
+	setReminder,
+	setPaper,
+	tagId,
+	hasListLink,
+	notifyBoards,
+	colors: COLORS,
+});
+
 // Errors travel back as { error } so the webview sees them the same way on desktop and mobile.
-async function handleMessage(message: any) {
+async function handleMessage(message: any, view: string) {
 	try {
+		if (String(message?.type).startsWith('ai')) return platform === 'desktop' ? await answerAi(message, view) : { error: 'Ask JotDrop works in Joplin on the desktop for now.' };
 		return await answer(message);
 	} catch (error) {
 		console.warn('JotDrop:', message?.type, error);
@@ -456,7 +471,7 @@ joplin.plugins.register({
 				await joplin.views.editors.setHtml(view, '<div id="jotdrop-root"></div>');
 				await joplin.views.editors.addScript(view, './board.css');
 				await joplin.views.editors.addScript(view, './board.js');
-				await joplin.views.editors.onMessage(view, handleMessage);
+				await joplin.views.editors.onMessage(view, (message: any) => handleMessage(message, view));
 				await joplin.views.editors.onUpdate(view, async () => notifyBoards());
 			},
 			onActivationCheck: async ({ noteId }) => {
@@ -498,6 +513,7 @@ joplin.plugins.register({
 		setInterval(() => { pollChanges().catch(() => { cursor = null; }); }, 3000);
 		if (platform === 'desktop') {
 			await registerCloudSettings();
+			await registerAiSettings();
 			setupShareLinks(credentials, writeListNote);
 			startCloud(boardFolderForNewBoard, notifyBoards);
 		}
