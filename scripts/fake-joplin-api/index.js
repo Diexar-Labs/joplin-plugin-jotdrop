@@ -21,6 +21,8 @@ function search(query) {
 const tagsOf = (id) => [...state.tags.values()].filter((tag) => state.links.has(`${tag.id}/${id}`));
 
 const joplin = {
+  // "desktop" unless a test sets globalThis.__joplin.platform = 'mobile' before registerAiSettings().
+  async versionInfo() { return { platform: state.platform || 'desktop', version: '3.7.10' }; },
   settings: {
     async registerSettings(spec) { for (const [key, item] of Object.entries(spec)) if (!(key in state.settings)) state.settings[key] = item.value; },
     async value(key) { return state.settings[key]; },

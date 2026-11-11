@@ -331,10 +331,7 @@ function buildShell() {
       renderAll(true);
       toast(t.drawingSaved);
     }) }, icon(PENCIL), ` ${t.drawing}`);
-  // Ask JotDrop: Joplin desktop only for now (design 5.7: Android after a test on the emulator).
-  const askChip = document.documentElement.dataset.platform === 'desktop'
-    ? h('button', { type: 'button', class: 'jd-chip jd-draw jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`)
-    : null;
+  const askChip = h('button', { type: 'button', class: 'jd-chip jd-draw jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`);
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
@@ -888,10 +885,9 @@ function closeMenu() {
   openMenu = null;
 }
 
-// ---- Ask JotDrop (Joplin desktop) ----
+// ---- Ask JotDrop ----
 
 function askButton(c) {
-  if (document.documentElement.dataset.platform !== 'desktop') return null;
   const button = h('button', { type: 'button', class: 'jd-act', title: t.ask, 'aria-label': t.ask, 'aria-haspopup': 'menu',
     onclick: (e) => {
       e.stopPropagation();

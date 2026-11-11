@@ -7,6 +7,10 @@ import { editorRequest } from '../cloud-shared/ai-web.mjs';
 // AI runs in the plugin's main process (src/ai.ts); this page never sees the key. The window is in English, like
 // the web app's; its buttons on the board are also in Dutch.
 
+// "This computer" on Joplin desktop, "this phone" on Joplin for Android (the board stamps the platform on <html>).
+const mobile = () => document.documentElement.dataset.platform === 'mobile';
+const here = () => (mobile() ? 'this phone' : 'this computer');
+
 const PROVIDER_NOTES = {
   ollama: 'Your request and notes stay on this computer: they go to Ollama running here. Choose a model that can use tools.',
   anthropic: 'Make an API key in your Anthropic account (Claude Console). The default model is Claude Haiku 5.5.',
@@ -15,6 +19,18 @@ const PROVIDER_NOTES = {
   openrouter: 'One key for many models. OpenRouter passes your request on to the company behind the model you choose. Load the models and pick one that can use tools.',
   custom: 'Any OpenAI-compatible service, such as LM Studio, a local server or Mistral. Use an https address, or an http address on this computer. A key is only needed if the service asks for one.',
 };
+const PROVIDER_NOTES_PHONE = {
+  ...PROVIDER_NOTES,
+  ollama: 'Only for Ollama running on this phone itself, at http://127.0.0.1:11434. Your request and notes then stay on this phone. Choose a model that can use tools.',
+  custom: 'Any OpenAI-compatible service, such as Mistral or your own server. Use an https address, or an http address on this phone itself. A key is only needed if the service asks for one.',
+};
+const providerNote = (id) => (mobile() ? PROVIDER_NOTES_PHONE : PROVIDER_NOTES)[id];
+
+// Where the key is kept. Joplin desktop: a secure setting (the system keychain). Joplin for Android 3.7 does not use a
+// key store for plugin settings: the key sits in Joplin's own database inside the app (measured 11 Nov 2026).
+const keyNote = () => (mobile()
+  ? 'Your key stays on this phone, in Joplin\'s own app data. Joplin does not encrypt it there; Android keeps it away from other apps. It does not sync with your notes, so you add it again on each device.'
+  : 'Your key stays on this computer, in Joplin\'s secure storage. It does not sync with your notes. On each computer you add it again.');
 
 const LOCAL = /^http:\/\/(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:|\/|$)/i;
 const onThisComputer = (s) => s.provider === 'ollama' || (s.provider === 'custom' && LOCAL.test(s.baseUrl));
@@ -28,7 +44,7 @@ export function createAsk({ h, post, toast, openCard }) {
     const service = spec(settings, settings.provider);
     if (!service) return '';
     const model = settings.model || service.defaultModel || 'no model chosen';
-    if (onThisComputer(settings)) return `Goes to ${settings.provider === 'ollama' ? 'Ollama' : settings.baseUrl} on this computer, model ${model}. Your request and notes stay on this computer.`;
+    if (onThisComputer(settings)) return `Goes to ${settings.provider === 'ollama' ? 'Ollama' : settings.baseUrl} on ${here()}, model ${model}. Your request and notes stay on ${here()}.`;
     if (settings.provider === 'custom') return `Goes straight to ${settings.baseUrl}, model ${model}. Nothing goes to JotDrop.`;
     return `Goes straight to ${service.name}, model ${model}. Nothing goes to JotDrop.`;
   }
@@ -257,7 +273,7 @@ export function createAsk({ h, post, toast, openCard }) {
       el.also.textContent = result.stop === 'off' ? 'Nothing was sent.'
         : `${result.failed ? 'Tried to send' : 'Sent'} to ${result.service}: your question${result.first ? ` and ${result.first} ${result.first === 1 ? 'note' : 'notes'}` : ''}${result.also.length ? `. While answering it also read: ${result.also.map((title) => `"${title}"`).join(', ')}` : ''}.`;
       el.usage.textContent = result.local
-        ? `Tokens: ${result.usage.input} in, ${result.usage.output} out, on this computer.`
+        ? `Tokens: ${result.usage.input} in, ${result.usage.output} out, on ${here()}.`
         : `Tokens: ${result.usage.input} in, ${result.usage.output} out. ${result.service} bills these to your account.`;
       if (!result.answer.trim()) return;
       if (summarize && note) {
@@ -316,15 +332,15 @@ export function createAsk({ h, post, toast, openCard }) {
         render();
       });
       const parts = [
-        h('p', { text: 'Optional and free. Ask JotDrop sends your question, and the notes it shows you first, straight from this computer to the AI service you choose, with your own key. JotDrop never sees them. A paid service bills you for what you use. New notes are made at once; a change to a note waits until you apply it.' }),
-        h('p', { class: 'jd-ask-note', text: 'Your key stays on this computer, in Joplin\'s secure storage. It does not sync with your notes. On each computer you add it again.' }),
-        field('AI service', select, draft.provider ? PROVIDER_NOTES[draft.provider] : 'Ask JotDrop is off. Choose an AI service to turn it on.'),
+        h('p', { text: `Optional and free. Ask JotDrop sends your question, and the notes it shows you first, straight from ${here()} to the AI service you choose, with your own key. JotDrop never sees them. A paid service bills you for what you use. New notes are made at once; a change to a note waits until you apply it.` }),
+        h('p', { class: 'jd-ask-note', text: keyNote() }),
+        field('AI service', select, draft.provider ? providerNote(draft.provider) : 'Ask JotDrop is off. Choose an AI service to turn it on.'),
       ];
       if (service) {
         if (draft.provider === 'custom') {
           const address = h('input', { type: 'text', placeholder: 'https://...', value: draft.baseUrl, 'aria-label': 'Address' });
           address.addEventListener('input', () => { draft.baseUrl = address.value.trim(); });
-          parts.push(field('Address', address, 'The service\'s base address, for example http://127.0.0.1:1234/v1 for LM Studio.'));
+          parts.push(field('Address', address, mobile() ? 'The service\'s base address, for example https://api.mistral.ai/v1.' : 'The service\'s base address, for example http://127.0.0.1:1234/v1 for LM Studio.'));
         }
         if (service.needsKey || draft.provider === 'custom') {
           const hasKey = draft.provider === saved.provider && saved.hasKey;
@@ -346,11 +362,17 @@ export function createAsk({ h, post, toast, openCard }) {
           row.append(list);
         }
         parts.push(field('Model', row, service.defaultModel ? `Empty means the default, ${service.defaultModel}.` : 'Load the models and choose one that can use tools.'));
-        const shared = h('input', { type: 'checkbox' });
-        shared.checked = draft.includeShared;
-        shared.addEventListener('change', () => { draft.includeShared = shared.checked; });
-        parts.push(h('label', { class: 'jd-ask-check' }, shared, ' Also use notes with a live list link'),
-          h('p', { class: 'jd-ask-note', text: 'Off: notes that others can open through a live list link stay out of Ask JotDrop.' }));
+        // Joplin for Android has no JotDrop Cloud, so the plugin cannot tell which notes have a live list link: no
+        // switch there (it would do nothing), only what happens instead.
+        if (mobile()) {
+          parts.push(h('p', { class: 'jd-ask-note', text: 'On this phone, notes with a live list link can go along, because JotDrop cannot tell which notes have one here. To keep one out, clear it in the list before you send.' }));
+        } else {
+          const shared = h('input', { type: 'checkbox' });
+          shared.checked = draft.includeShared;
+          shared.addEventListener('change', () => { draft.includeShared = shared.checked; });
+          parts.push(h('label', { class: 'jd-ask-check' }, shared, ' Also use notes with a live list link'),
+            h('p', { class: 'jd-ask-note', text: 'Off: notes that others can open through a live list link stay out of Ask JotDrop, as long as JotDrop Cloud is connected on this computer.' }));
+        }
       }
       const remove = h('button', { type: 'button', class: 'jd-ask-warning', disabled: !saved.provider, onclick: removeKey }, 'Remove key and turn off');
       parts.push(h('div', { class: 'jd-ask-buttons' }, h('button', { type: 'button', class: 'jd-ask-primary', onclick: save }, 'Save'), remove));
@@ -363,7 +385,7 @@ export function createAsk({ h, post, toast, openCard }) {
         const next = await post({ type: 'aiSave', ...draft });
         Object.assign(saved, next);
         draft = { provider: next.provider, key: '', model: next.model, baseUrl: next.baseUrl, includeShared: next.includeShared };
-        say(next.provider ? 'Saved. Ask JotDrop is on on this computer.' : 'Saved. Ask JotDrop is off.');
+        say(next.provider ? `Saved. Ask JotDrop is on on ${here()}.` : 'Saved. Ask JotDrop is off.');
         onSaved();
       } catch (error) { say(String(error?.message || error), true); }
     }
@@ -373,7 +395,7 @@ export function createAsk({ h, post, toast, openCard }) {
         Object.assign(saved, await post({ type: 'aiRemove' }));
         draft = { provider: '', key: '', model: '', baseUrl: '', includeShared: false };
         models = null;
-        say('Ask JotDrop is off, and the key is removed from this computer.');
+        say(`Ask JotDrop is off, and the key is removed from ${here()}.`);
         onSaved();
       } catch (error) { say(String(error?.message || error), true); }
     }

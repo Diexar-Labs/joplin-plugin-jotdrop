@@ -83,7 +83,7 @@ Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins
 - **Tick checklists on the card.** ☐ becomes ☑, and your note is updated.
 - **Reminders.** Pick later today, tomorrow, next week or your own moment. JotDrop uses Joplin's own to-do alarm, so the reminder also works without the board.
 - **Share by link.** Send someone a read-only copy of a note, or a shopping list they can tick off in their browser. Needs JotDrop Cloud on Joplin desktop. [More below](#share-a-note-by-link).
-- **Ask JotDrop**, an optional AI assistant with your own key, on Joplin desktop: ask about your notes, add to a list, make a note or summarize one. A change to a note waits until you apply it. [More below](#ask-jotdrop-ai-with-your-own-key).
+- **Ask JotDrop**, an optional AI assistant with your own key, on Joplin desktop and Joplin for Android: ask about your notes, add to a list, make a note or summarize one. A change to a note waits until you apply it. [More below](#ask-jotdrop-ai-with-your-own-key).
 
 ### Find
 
@@ -193,15 +193,19 @@ Choose how long the link works, click **Make link** and send the link yourself. 
 
 ## Ask JotDrop: AI with your own key
 
-On Joplin desktop, JotDrop has an optional AI assistant. Select **Ask JotDrop** at the top of the board, or the sparkles on a card, and ask in your own words: "what was the wifi code at grandma's?", "put milk and bread on the shopping list", or "summarize this note".
+On Joplin desktop and Joplin for Android, JotDrop has an optional AI assistant. Select **Ask JotDrop** at the top of the board, or the sparkles on a card, and ask in your own words: "what was the wifi code at grandma's?", "put milk and bread on the shopping list", or "summarize this note".
 
 - **Your own AI service and key.** Claude, OpenAI, Gemini, OpenRouter, Ollama on your own computer, or an OpenAI-compatible address such as LM Studio. Choose it under **Settings** in the Ask JotDrop window. Ask JotDrop is free; a paid AI service bills you for what you use.
-- **You see what goes along.** Before you send, the window lists the notes that go with your question: at most 20 notes with words of your question, found with Joplin's own search index in all your notebooks, the same notes the board shows. Clear a note to keep it out. While answering, the AI can read more of the notes that match your question, and afterwards the window tells you which ones. Notes in the trash never go along, and notes with a live list link stay out unless you allow them.
+- **You see what goes along.** Before you send, the window lists the notes that go with your question: at most 20 notes with words of your question, found with Joplin's own search index in all your notebooks, the same notes the board shows. Clear a note to keep it out. While answering, the AI can read more of the notes that match your question, and afterwards the window tells you which ones. Notes in the trash never go along. On Joplin desktop with JotDrop Cloud connected, notes with a live list link stay out unless you allow them.
 - **Changes wait for you.** A new note is made at once. Adding to a note, replacing its text, its tags, a reminder or an expiry date first shows you the change, with + and - before each line, and you apply it or not. Ask JotDrop cannot delete, archive or share notes.
-- **Straight to the service you picked.** Your request and the notes that go along travel from Joplin on your computer to that service, with your own key. No JotDrop server sits in between. The key is kept in Joplin's secure storage on this computer, not in your notes, and it does not sync. The service handles your request under its own terms. Some services may use what you send to improve their products, Google for example on the free tier of the Gemini API outside the EEA, Switzerland and the UK, so read the terms of the one you pick. With Ollama or another model on your own computer, your request and notes stay on that computer.
+- **Straight to the service you picked.** Your request and the notes that go along travel from Joplin on your computer or phone to that service, with your own key. No JotDrop server sits in between. On Joplin desktop the key is kept in Joplin's secure storage on that computer, not in your notes, and it does not sync. The service handles your request under its own terms. Some services may use what you send to improve their products, Google for example on the free tier of the Gemini API outside the EEA, Switzerland and the UK, so read the terms of the one you pick. With Ollama or another model on your own computer, your request and notes stay on that computer.
 - **Answers say where they come from.** In the window, each answer names the service and model that wrote it. If an answer is wrong or strange, **Report** lets you mail it to us. The report holds your question and the answer, not your notes or your key.
 
-Ask JotDrop works on Joplin desktop. On Android it comes later.
+On **Joplin for Android** Ask JotDrop works the same way, with a few differences:
+
+- **The key is not encrypted on the phone.** Joplin for Android keeps it in its own app data and does not use Android's key store for it. Android keeps that data away from other apps, but someone who gets into it, on a rooted phone for example, could read the key. It does not sync and never goes into your notes. You add it on each device.
+- **Notes with a live list link can go along.** Only Joplin desktop with JotDrop Cloud connected knows which notes have one. On Android, and on a desktop without the cloud, such a note goes along like any other note that matches. Clear it in the list before you send if you want to keep it out.
+- **Ollama only on the phone itself.** On a phone, Ollama or another http address means a model running on that same phone. For a service somewhere else, use an https address.
 
 ## How it works
 
@@ -278,7 +282,7 @@ That is up to your Joplin settings. Joplin's end-to-end encryption is optional a
 Not for the board. Without JotDrop Cloud the plugin has no account and no server, and without Ask JotDrop no network requests of its own. You only need the cloud to bring in notes from the JotDrop app or to share a note by link, and the free plan is enough for a phone and one Joplin. Ask JotDrop needs no JotDrop account either, only a key from the AI service you pick, or a model on your own computer.
 
 **Does JotDrop see what I ask Ask JotDrop?**
-No. Your request and the notes that go along travel from Joplin on your computer straight to the AI service you picked, with your own key. With a local model such as Ollama on your own computer, they stay on that computer.
+No. Your request and the notes that go along travel from Joplin on your computer or phone straight to the AI service you picked, with your own key. With a local model such as Ollama on your own computer, they stay on that computer.
 
 **Can notes from the JotDrop app appear in Joplin?**
 Yes. [Connect JotDrop Cloud](#from-the-jotdrop-app-into-joplin) on Joplin desktop and they come in as ordinary notes. It goes one way, and whatever you changed in Joplin stays as you left it.

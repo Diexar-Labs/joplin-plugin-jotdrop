@@ -261,6 +261,34 @@ test('an own address on this computer counts as local', async () => {
   assert.equal(result.service, 'http://127.0.0.1:9871/v1');
 });
 
+test('on Joplin for Android an error about Ollama says "this phone"', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  try {
+    assert.match((await answer({ type: 'aiModels', provider: 'ollama' })).error, /on this computer, at http:\/\/127\.0\.0\.1:11434/);
+    joplin.platform = 'mobile';
+    await ai.registerAiSettings();
+    assert.match((await answer({ type: 'aiModels', provider: 'ollama' })).error, /on this phone, at http:\/\/127\.0\.0\.1:11434/);
+  } finally {
+    globalThis.fetch = real;
+    joplin.platform = undefined;
+    await ai.registerAiSettings();
+  }
+});
+
+test('the window and the README tell where the key is on each platform', () => {
+  const ask = readFileSync(new URL('src/board/ask.js', root), 'utf8');
+  assert.match(ask, /Your key stays on this computer, in Joplin\\'s secure storage/);
+  assert.match(ask, /Your key stays on this phone, in Joplin\\'s own app data\. Joplin does not encrypt it there/);
+  assert.match(ask, /On this phone, notes with a live list link can go along, because JotDrop cannot tell which notes have one here/);
+  assert.match(ask, /if \(mobile\(\)\) \{\s*parts\.push\(h\('p'/, 'no list-link switch on the phone');
+  const readme = readFileSync(new URL('README.md', root), 'utf8');
+  assert.match(readme, /On \*\*Joplin for Android\*\* Ask JotDrop works the same way/);
+  assert.match(readme, /The key is not encrypted on the phone/);
+  assert.match(readme, /Notes with a live list link can go along/);
+  assert.ok(!/On Android it comes later/.test(readme));
+});
+
 test('source rules: no innerHTML, the key stays in the main process, one fetch', () => {
   const code = (path) => readFileSync(new URL(path, root), 'utf8').replace(/^\s*\/\/.*$/gm, '');
   const page = code('src/board/ask.js') + code('src/board/board.js');

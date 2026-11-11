@@ -311,7 +311,7 @@ async function boardFolderId() {
 	return (await allPages(['folders'], { fields: ['id'] }))[0]?.id || '';
 }
 
-// Ask JotDrop, desktop only for now (Joplin for Android: after a test on the emulator, design 5.7).
+// Ask JotDrop, on desktop and mobile (Joplin for Android tested on the emulator, 11 Nov 2026).
 const answerAi = setupAsk({
 	allPages,
 	isBoard: (note) => note.id === boardId || readUserData(note.user_data).board === true,
@@ -327,7 +327,7 @@ const answerAi = setupAsk({
 // Errors travel back as { error } so the webview sees them the same way on desktop and mobile.
 async function handleMessage(message: any, view: string) {
 	try {
-		if (String(message?.type).startsWith('ai')) return platform === 'desktop' ? await answerAi(message, view) : { error: 'Ask JotDrop works in Joplin on the desktop for now.' };
+		if (String(message?.type).startsWith('ai')) return await answerAi(message, view);
 		return await answer(message);
 	} catch (error) {
 		console.warn('JotDrop:', message?.type, error);
@@ -511,9 +511,9 @@ joplin.plugins.register({
 		await joplin.workspace.onSyncComplete(async () => notifyBoards());
 		await joplin.settings.onChange(async (event) => { if (event.keys.includes('editedToTop')) await notifyBoards(); });
 		setInterval(() => { pollChanges().catch(() => { cursor = null; }); }, 3000);
+		await registerAiSettings();
 		if (platform === 'desktop') {
 			await registerCloudSettings();
-			await registerAiSettings();
 			setupShareLinks(credentials, writeListNote);
 			startCloud(boardFolderForNewBoard, notifyBoards);
 		}

@@ -8,10 +8,12 @@ import { appendedText, describeChange, modelGroups } from './cloud-shared/ai-web
 import { DEFAULT_WARN, PAPER_DRAWER, drawerLabel, validExpires } from './cloud-shared/paper.mjs';
 import manifest from './manifest.json';
 
-// Ask JotDrop in Joplin desktop: AI with the user's own key (Hand-off/ontwerp-ai-eigen-sleutel.md, phase 5). The
-// shared assistant runs here, in the plugin's main process, and talks straight to the AI service the user chose;
-// never through a JotDrop server. The key is a secure setting (the system keychain when there is one) and never
-// goes to the board's webview. The board only shows: it sends the request, shows what goes along, asks the user to
+// Ask JotDrop in Joplin desktop and Joplin for Android: AI with the user's own key (Hand-off/ontwerp-ai-eigen-sleutel.md,
+// phase 5). The shared assistant runs here, in the plugin's main process, and talks straight to the AI service the user
+// chose; never through a JotDrop server. The key is a secure setting and never goes to the board's webview. On desktop
+// that is the system keychain when there is one; Joplin for Android 3.7 keeps it in Joplin's own database inside the
+// app (measured 11 Nov 2026), and the window says so. On Android the plugin's fetch sends `Origin: null`, so a service
+// must allow CORS; the four big ones do. The board only shows: it sends the request, shows what goes along, asks the user to
 // confirm a change, and shows the answer.
 //
 // Which notes: Joplin's own full-text index finds the notes with words of the request (like the board's search), at
@@ -39,7 +41,11 @@ export type AskHelpers = {
 const POOL = 200;
 const NOTE_FIELDS = ['id', 'title', 'body', 'updated_time', 'user_data', 'is_conflict', 'deleted_time', 'encryption_applied'];
 
+// "This computer" on desktop, "this phone" on Joplin for Android, in the words of an error.
+let here = 'this computer';
+
 export async function registerAiSettings() {
+	here = (await joplin.versionInfo()).platform === 'mobile' ? 'this phone' : 'this computer';
 	await joplin.settings.registerSettings({
 		aiProvider: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Ask JotDrop: AI service' },
 		aiKey: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, secure: true, label: 'Ask JotDrop: API key' },
@@ -81,8 +87,9 @@ const onThisComputer = (config: Config) => config.provider === 'ollama' || (conf
 /** The service's words come along, with every key in them hidden by the shared core. */
 function errorText(error: any, provider: string): string {
 	if (error instanceof AiError || (error && typeof error === 'object' && 'code' in error && 'detail' in error)) {
-		// Joplin's plugin process sends no Origin header, so a local service needs no CORS setting (measured 11 Nov 2026).
-		const hint = error.code !== 'network' ? '' : provider === 'ollama' ? ' Is Ollama running on this computer, at http://127.0.0.1:11434?' : provider === 'custom' ? ' Is the service running at this address?' : '';
+		// Joplin desktop's plugin process sends no Origin header, so a local service needs no CORS setting there; on
+		// Android it sends `Origin: null` and the service must allow that (both measured 11 Nov 2026).
+		const hint = error.code !== 'network' ? '' : provider === 'ollama' ? ` Is Ollama running on ${here}, at http://127.0.0.1:11434?` : provider === 'custom' ? ' Is the service running at this address?' : '';
 		return `${error.message}${error.detail ? ` The service said: ${error.detail}` : ''}${hint}`;
 	}
 	return error instanceof Error ? error.message : 'Something went wrong. Try again.';
