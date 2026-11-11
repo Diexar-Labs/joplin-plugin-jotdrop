@@ -48,7 +48,7 @@ Tick a task, pin a note, pick a color, drag a card, find a note by a word inside
   <img src="https://raw.githubusercontent.com/Diexar-Labs/joplin-plugin-jotdrop/main/images/board.webp" alt="JotDrop card view in Joplin desktop with pinned notes on top and colorful note cards below" width="820" />
 </p>
 
-A card shows what matters: the title and text, ticked tasks with a line through them, the first photo as a cover, one chip per website you linked to, your tags and a due date. Pinned cards get a strip of tape and stay on top.
+A card shows what matters: the title and text, ticked tasks with a line through them, the first photo as a cover, other attached files (a PDF, a spreadsheet) as chips with their name and size, one chip per website you linked to, your tags and a due date. Pinned cards get a strip of tape and stay on top.
 
 ## Get JotDrop for Joplin
 
