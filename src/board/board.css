@@ -231,3 +231,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-ask-check { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: .9rem; }
 .jd-ask-problem { margin: 10px 0 0; font-weight: 600; }
 .jd-ask-said { margin: 10px 0 0; }
+/* Version 2: a file row has an icon and its kind in words; the receipt screen's pressed keep button carries a ✓ and bold. */
+.jd-ask-file { overflow-wrap: anywhere; }
+.jd-ask-file svg { width: 1em; height: 1em; vertical-align: -0.15em; fill: currentColor; color: var(--muted); }
+.jd-ask-receipt-row { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; font-size: .9rem; }
+.jd-ask-receipt-row label { font-weight: 600; }
+.jd-ask-receipt-row input, .jd-ask-receipt-row select, .jd-ask-receipt-row textarea { width: 100%; box-sizing: border-box; }
+.jd-ask input[type="date"] { box-sizing: border-box; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.jd-ask-receipt-keep { margin: 8px 0; padding: 0; border: none; font-size: .9rem; }
+.jd-ask-receipt-keep legend { padding: 0; font-weight: 600; }
+.jd-ask-receipt-keep button[aria-pressed="true"] { font-weight: 700; border-color: var(--ink); }

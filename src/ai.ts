@@ -1,11 +1,16 @@
 import joplin from 'api';
 import { ModelType, SettingItemType } from 'api/types';
-import { runAssistant } from './cloud-shared/ai/assistant.mjs';
-import { AiError, PROVIDERS, createProvider, pickDefaultModel } from './cloud-shared/ai/providers.mjs';
+import { FILE_TIMEOUT_MS, runAssistant } from './cloud-shared/ai/assistant.mjs';
+import { AiError, PROVIDERS, TRANSCRIBE_MODEL, createProvider, pickDefaultModel } from './cloud-shared/ai/providers.mjs';
 import { selectNotes, words } from './cloud-shared/ai/context.mjs';
+import { LIMITS, MIMES, capabilities, decodedLength, explain } from './cloud-shared/ai/parts.mjs';
+import { parseReceipt, receiptRequest } from './cloud-shared/ai/receipt.mjs';
 import { foldUnchanged } from './cloud-shared/diff.mjs';
-import { appendedText, describeChange, modelGroups } from './cloud-shared/ai-web.mjs';
-import { DEFAULT_WARN, PAPER_DRAWER, drawerLabel, validExpires } from './cloud-shared/paper.mjs';
+import { PHOTO_SYSTEM, aiFileKind, appendedText, describeChange, fileRequest, modelGroups, plainBase64 } from './cloud-shared/ai-web.mjs';
+import { DEFAULT_WARN, PAPER_DRAWER, SUGGESTED_DRAWERS, drawerLabel, drawerName, isPaperDrawer, validExpires } from './cloud-shared/paper.mjs';
+import { bytesToBase64 } from './cloud-shared/crypto.mjs';
+import { isDrawingName } from './cloud-shared/drawing.mjs';
+import { resourceLinks } from './fileChips.mjs';
 import manifest from './manifest.json';
 
 // Ask JotDrop in Joplin desktop and Joplin for Android: AI with the user's own key (Hand-off/ontwerp-ai-eigen-sleutel.md,
@@ -20,6 +25,13 @@ import manifest from './manifest.json';
 // most POOL of them; the shared code then picks what goes along, at most 20 notes and 30,000 characters. Not the
 // board note, not the trash, no conflicts or notes Joplin could not decrypt. A note with a live list link is
 // "shared" and stays home unless the user allows it.
+//
+// Version 2 (Hand-off/ontwerp-ask-jotdrop-v2.md, phase 5): the photos, PDFs and recordings a note links to (Joplin
+// resources) can go along when the user ticks them, and three fixed actions on a card send one of them with no notes
+// and no tools: write out a recording, read a photo, read a receipt for the Paper drawer. The bytes are read here,
+// with resourceBytes, and never travel through the board. Joplin's main process has no canvas, so a photo goes as it
+// is: JPEG, PNG, WebP or GIF up to 4 MiB; anything else gets a message. Joplin for Android cannot read the bytes for a
+// plugin, so there files show with that reason and the card menu has no file actions.
 
 export const AI_PROVIDER_IDS = ['ollama', 'anthropic', 'openai', 'gemini', 'openrouter', 'custom'];
 type Config = { provider: string; key: string; model: string; baseUrl: string; includeShared: boolean };
@@ -35,13 +47,80 @@ export type AskHelpers = {
 	tagId: (title: string) => Promise<string>;
 	hasListLink: (id: string) => boolean;
 	notifyBoards: () => Promise<void>;
+	resourceBytes: (id: string) => Promise<Uint8Array>;
 	colors: Set<string>;
 };
+
+type FileKind = 'image' | 'pdf' | 'audio';
+/** A file of a note that can go along: a resource the note links to; bytes is its size as Joplin knows it. */
+type AiFile = { id: string; name: string; kind: FileKind; mime: string; bytes: number };
+/** The fixed actions on a card, with the kinds of file each one takes. */
+export const FILE_ACTIONS: Record<string, FileKind[]> = { transcribe: ['audio'], photo: ['image'], receipt: ['image', 'pdf'] };
+const isAction = (value: unknown) => typeof value === 'string' && Object.prototype.hasOwnProperty.call(FILE_ACTIONS, value);
+const RESOURCE_FIELDS = ['id', 'title', 'mime', 'file_extension', 'size'];
+
+/** The kind and type of a resource that can go along, or null: a drawing waits (decision 4), other files stay home. */
+export function aiFileOf(resource: { title?: string; mime?: string; file_extension?: string }): { kind: FileKind; mime: string } | null {
+	const title = String(resource.title || '');
+	if (isDrawingName(title)) return null;
+	const byName = aiFileKind(title) || (resource.file_extension ? aiFileKind(`file.${resource.file_extension}`) : null);
+	const mime = String(resource.mime || '').toLowerCase();
+	const kind: FileKind | '' = byName?.kind || (mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : mime === 'application/pdf' ? 'pdf' : '');
+	if (!kind) return null;
+	return { kind, mime: MIMES[kind].includes(mime) ? mime : byName?.mime || mime };
+}
+
+// Per resource: the kind of file it is for the card's menu, or null. Not kept: a resource that could not be read yet.
+const kindCache = new Map<string, FileKind | null>();
+
+/** The kinds of file a note links to that can go along: enough to choose the card's menu items. */
+export async function aiFileKinds(body: string): Promise<FileKind[]> {
+	const kinds = new Set<FileKind>();
+	if (here === 'this phone') return [];
+	for (const { id } of resourceLinks(body)) {
+		if (!kindCache.has(id)) {
+			try { kindCache.set(id, aiFileOf(await joplin.data.get(['resources', id], { fields: RESOURCE_FIELDS }))?.kind || null); } catch { continue; }
+		}
+		const kind = kindCache.get(id);
+		if (kind) kinds.add(kind);
+	}
+	return [...kinds];
+}
+
+/** The files of a note that can go along, once each, in the note's own order. A link to a note is left out. */
+async function noteFiles(noteId: string): Promise<AiFile[]> {
+	const note = await joplin.data.get(['notes', noteId], { fields: ['body'] });
+	const files: AiFile[] = [];
+	for (const { id, text } of resourceLinks(String(note.body || ''))) {
+		if (files.some((file) => file.id === id)) continue;
+		let resource: any;
+		try { resource = await joplin.data.get(['resources', id], { fields: RESOURCE_FIELDS }); } catch { continue; }
+		const type = resource && aiFileOf(resource);
+		if (type) files.push({ id, name: String(resource.title || text || `file.${resource.file_extension || 'bin'}`), ...type, bytes: Number(resource.size) || 0 });
+	}
+	return files;
+}
+
+const WORDS: Record<FileKind, string> = { image: 'photo', pdf: 'PDF', audio: 'recording' };
+
+/** Why a file cannot go with this service, in words, or ''. Checked before anything is read. */
+function fileProblem(file: AiFile, config: Config, action: string): string {
+	// Joplin for Android 3.7 gives a plugin no way to read an attachment's bytes ("Unsupported encoding: buffer",
+	// measured on the emulator 12 Nov 2026), so there the card menu has no file actions and a file says why.
+	if (here === 'this phone') return 'Joplin for Android does not let JotDrop read attached files. Use Joplin on your computer for this.';
+	const use = action === 'transcribe' ? 'transcribe' : 'ask';
+	const caps = capabilities(config.provider, { id: config.model || PROVIDERS[config.provider]?.defaultModel || '' });
+	if (caps[file.kind === 'audio' && use === 'transcribe' ? 'transcribe' : file.kind] === false) return explain(config.provider, file.kind, use);
+	if (!MIMES[file.kind].includes(file.mime)) return file.kind === 'image' ? 'Joplin sends JPEG, PNG, WebP and GIF photos only.' : `This type of ${WORDS[file.kind]} cannot go along.`;
+	if (file.bytes > LIMITS[file.kind]) return `Larger than ${Math.round(LIMITS[file.kind] / 1048576)} MiB, too large to send.`;
+	return '';
+}
 
 const POOL = 200;
 const NOTE_FIELDS = ['id', 'title', 'body', 'updated_time', 'user_data', 'is_conflict', 'deleted_time', 'encryption_applied'];
 
-// "This computer" on desktop, "this phone" on Joplin for Android, in the words of an error.
+// "This computer" on desktop, "this phone" on Joplin for Android, in the words of an error; also how this file tells
+// that it runs on Android.
 let here = 'this computer';
 
 export async function registerAiSettings() {
@@ -241,16 +320,74 @@ export function setupAsk(helpers: AskHelpers) {
 		});
 	}
 
+	// The files the board asks to send: only files of this note that can go, each read here. A shared note's files
+	// stay home like the note itself.
+	async function chosenFiles(config: Config, noteId: string, ids: string[], action: string): Promise<AiFile[]> {
+		if (!ids.length) return [];
+		if (!noteId) throw new Error('A file goes along only from a note.');
+		if (helpers.hasListLink(noteId) && !config.includeShared) throw new Error('This note has a live list link. Ask JotDrop keeps those notes and their files out.');
+		const files = (await noteFiles(noteId)).filter((file) => ids.includes(file.id) && (!action || FILE_ACTIONS[action].includes(file.kind)));
+		if (files.length !== new Set(ids).size) throw new Error('That file is no longer in this note.');
+		for (const file of files) {
+			const problem = fileProblem(file, config, action);
+			if (problem) throw new Error(`${file.name}: ${problem}`);
+		}
+		return files;
+	}
+
+	async function readPart(file: AiFile) {
+		let bytes: Uint8Array;
+		try { bytes = await helpers.resourceBytes(file.id); } catch { throw new Error(`${file.name} is not on ${here} yet. Let Joplin finish syncing, then try again.`); }
+		if (bytes.length > LIMITS[file.kind]) throw new Error(`${file.name} is larger than ${Math.round(LIMITS[file.kind] / 1048576)} MiB.`);
+		return { kind: file.kind, mime: file.mime, name: file.name, data: plainBase64(bytesToBase64(bytes)) };
+	}
+
+	// Writing out a recording, reading a photo and reading a receipt are one request each, without tools or notes,
+	// with the longer AI time of files. The result takes the form of the assistant's report.
+	async function once(config: Config, action: string, parts: any[], locale: string, signal: AbortSignal) {
+		const report: any = { answer: '', sent: [], sources: [], actions: [], files: parts.map((part) => ({ name: part.name, kind: part.kind, bytes: decodedLength(part.data) })), rounds: 1, usage: { input: 0, output: 0 }, stop: 'done' };
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(new DOMException('The AI service took too long.', 'TimeoutError')), FILE_TIMEOUT_MS);
+		const passOn = () => controller.abort(signal.reason);
+		signal.addEventListener('abort', passOn, { once: true });
+		try {
+			const ai = createProvider({ provider: config.provider, key: config.key, model: config.model, baseUrl: config.baseUrl }, fetcher);
+			let answer: any;
+			if (action === 'transcribe') answer = await ai.transcribe({ audio: parts[0], language: locale, signal: controller.signal });
+			else if (action === 'receipt') {
+				const { system, text } = receiptRequest(language(locale));
+				answer = await ai.complete({ system, messages: [{ role: 'user', text, parts }], tools: [], signal: controller.signal });
+			} else answer = await ai.complete({ system: PHOTO_SYSTEM, messages: [{ role: 'user', text: fileRequest('photo'), parts }], tools: [], signal: controller.signal });
+			report.answer = answer.text ?? '';
+			report.usage = { input: answer.usage?.input ?? 0, output: answer.usage?.output ?? 0, ...(answer.usage?.seconds ? { seconds: answer.usage.seconds } : {}) };
+			if (answer.stop === 'refusal') report.stop = 'refusal';
+		} catch (error: any) {
+			const known = error instanceof AiError ? error as any : new AiError('bad_response', String(error?.message ?? '')) as any;
+			// JotDrop's own check stops a file before anything goes out.
+			if (!known.status && ['unsupported_input', 'too_large', 'bad_request'].includes(known.code)) report.rounds = 0;
+			report.stop = known.code === 'timeout' || known.code === 'cancelled' ? known.code : known.code === 'refusal' ? 'refusal' : ['no_key', 'no_model', 'no_provider', 'bad_address'].includes(known.code) ? 'off' : 'error';
+			if (report.stop !== 'refusal') report.error = { code: known.code, message: known.message, detail: known.detail };
+		} finally {
+			clearTimeout(timer);
+			signal.removeEventListener('abort', passOn);
+		}
+		return report;
+	}
+
 	async function ask(message: any, view: string) {
 		const config = await loadConfig();
 		const request = String(message.request || '').trim();
 		if (!request) throw new Error('Type a request first.');
 		const noteId = message.noteId ? String(message.noteId) : '';
-		const summarize = message.mode === 'summarize' && noteId;
+		const action = noteId && isAction(message.action) ? String(message.action) : '';
+		const summarize = !action && message.mode === 'summarize' && noteId;
+		const files = await chosenFiles(config, noteId, summarize ? [] : (message.files || []).map(String), action);
+		if (action && files.length !== 1) throw new Error('Choose a file first.');
 		const excluded = new Set<string>((message.excluded || []).map(String));
 		const pinned = noteId ? [noteId] : [];
-		const notes = (await pool(request, pinned, summarize ? noteId : undefined)).filter((note) => !excluded.has(note.id));
-		const labels = await withLabels(notes);
+		// A file action sends the file only: no notes, no labels.
+		const notes = action ? [] : (await pool(request, pinned, summarize ? noteId : undefined)).filter((note) => !excluded.has(note.id));
+		const labels = action ? [] : await withLabels(notes);
 		const first = new Set(pick(notes, request, pinned, config.includeShared).map((note) => note.id));
 		const seen = new Map(notes.map((note) => [note.id, note.updated]));
 		const titles = new Map(notes.map((note) => [note.id, note.title]));
@@ -258,15 +395,21 @@ export function setupAsk(helpers: AskHelpers) {
 		const token = String(message.token || ++asks);
 		const run = { controller: new AbortController(), waiting: new Map<string, (yes: boolean) => void>() };
 		runs.set(token, run);
+		const locale = String(await joplin.settings.globalValue('locale') || 'en');
+		// The note as it is now: the receipt screen changes it only when nothing changed meanwhile.
+		const updated = action === 'receipt' ? Number((await joplin.data.get(['notes', noteId], { fields: ['updated_time'] })).updated_time) : 0;
 		let report: any;
 		try {
-			report = await runAssistant({
+			const parts: any[] = [];
+			for (const file of files) parts.push(await readPart(file));
+			if (run.controller.signal.aborted) throw new DOMException('Stopped.', 'AbortError');
+			report = action ? await once(config, action, parts, locale, run.controller.signal) : await runAssistant({
 				request, notes, labels, pinned, includeShared: config.includeShared,
-				settings: { language: language(String(await joplin.settings.globalValue('locale') || 'en')), date: today(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+				settings: { language: language(locale), date: today(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
 				config: { provider: config.provider, key: config.key, model: config.model, baseUrl: config.baseUrl },
 				// After Stop no new round goes out (the shared loop only passes on a stop that comes while a round runs).
 				fetcher: (url: string, init?: RequestInit) => run.controller.signal.aborted ? Promise.reject(new DOMException('Stopped.', 'AbortError')) : fetcher(url, init),
-				executor: executor(seen, opened), confirm: confirmOn(view, token, run), signal: run.controller.signal,
+				executor: executor(seen, opened), confirm: confirmOn(view, token, run), signal: run.controller.signal, parts,
 			});
 		} finally {
 			runs.delete(token);
@@ -292,12 +435,56 @@ export function setupAsk(helpers: AskHelpers) {
 			})),
 			first: first.size,
 			also: report.sent.filter((note: any) => !first.has(note.id)).map((note: any) => note.title),
+			files: report.files || [],
+			// Nothing went out when JotDrop's own check stopped a file first.
+			nothingSent: Boolean(report.error) && report.rounds === 0,
 			usage: report.usage,
 			service: config.provider === 'custom' ? config.baseUrl : service?.name || '',
-			model: config.model || service?.defaultModel || '',
+			// OpenAI writes out a recording with its own model.
+			model: action === 'transcribe' && config.provider === 'openai' ? TRANSCRIBE_MODEL : config.model || service?.defaultModel || '',
 			local: onThisComputer(config),
 			open: opened.id || '',
+			receipt: action === 'receipt' && report.stop === 'done' ? parseReceipt(report.answer) : null,
+			updated,
 		};
+	}
+
+	/** The note's files for the window, without their bytes, with why one cannot go; for a receipt also the drawers. */
+	async function filesShown(message: any) {
+		const config = await loadConfig();
+		const noteId = String(message.noteId || '');
+		const action = isAction(message.action) ? String(message.action) : '';
+		// The fixed request of an action, as it goes out, for the window to show.
+		const request = action === 'receipt' ? receiptRequest(language(String(await joplin.settings.globalValue('locale') || 'en'))).text : action ? fileRequest(action) : '';
+		if (!noteId || (helpers.hasListLink(noteId) && !config.includeShared)) return { files: [], drawers: [], drawer: '', request };
+		const files = (await noteFiles(noteId)).filter((file) => !action || FILE_ACTIONS[action].includes(file.kind))
+			.map((file) => ({ id: file.id, name: file.name, kind: file.kind, bytes: file.bytes, problem: fileProblem(file, config, action) }));
+		if (action !== 'receipt') return { files, drawers: [], drawer: '', request };
+		// Joplin keeps tags in lower case: a suggested drawer that is already there in lower case shows once.
+		const tags = (await helpers.allPages(['tags'], { fields: ['title'] })).map((tag) => String(tag.title));
+		const own = tags.filter((title) => isPaperDrawer(title)).map(drawerName).filter(Boolean);
+		const drawers = [...own, ...SUGGESTED_DRAWERS.filter((name) => !own.includes(name.toLowerCase()))];
+		const current = (await helpers.allPages(['notes', noteId, 'tags'], { fields: ['title'] })).map((tag) => drawerName(tag.title)).find(Boolean) || '';
+		return { files, drawers, drawer: current, request };
+	}
+
+	// "Receipt to Paper drawer" after Apply, with the same code as the tools: the new title (empty keeps the old), the
+	// lines below the note (as append_to_note), then the drawer, the expiry date and its warning (as set_expiry). A
+	// note changed since the AI read the receipt is left alone; a bad date changes nothing.
+	async function applyReceipt(message: any) {
+		const id = String(message.id || '');
+		const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time', 'deleted_time', 'todo_due'] });
+		if (!note || Number(note.deleted_time)) throw new Error('This note is in the trash now, so it was left as it is.');
+		if (Number(note.updated_time) !== Number(message.updated)) throw new Error('This note changed while Ask JotDrop worked, so it was left as it is.');
+		const day = validExpires(String(message.expires || ''));
+		if (!day) throw new Error('Choose how long to keep it, or fill in a date.');
+		const title = oneLine(message.title);
+		const lines = String(message.lines ?? '').trim();
+		if (title || lines) await joplin.data.put(['notes', id], null, { ...(title ? { title } : {}), ...(lines ? { body: appendedText(String(note.body || ''), { text: lines }) } : {}) });
+		const name = oneLine(message.drawer).replace(/\//g, ' ').trim();
+		await helpers.setPaper(id, (name ? drawerLabel(name) : PAPER_DRAWER).toLowerCase(), day, Number(note.todo_due) ? '' : DEFAULT_WARN);
+		await helpers.notifyBoards();
+		return { expires: day };
 	}
 
 	/** The settings without the key: the board only learns whether one is saved. */
@@ -353,6 +540,8 @@ export function setupAsk(helpers: AskHelpers) {
 				return { notes: pick(notes, String(message.request || ''), pinned, config.includeShared).map(({ id, title, truncated }) => ({ id, title, truncated })) };
 			}
 			case 'aiAsk': return await ask(message, view);
+			case 'aiFiles': return await filesShown(message);
+			case 'aiReceipt': return await applyReceipt(message);
 			case 'aiConfirmAnswer': {
 				for (const run of runs.values()) {
 					const resolve = run.waiting.get(String(message.id));

@@ -6,7 +6,7 @@ import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
 import { boardRank } from './board/order.js';
 import { fileChip, resourceLinks } from './fileChips.mjs';
-import { registerAiSettings, setupAsk } from './ai';
+import { aiFileKinds, registerAiSettings, setupAsk } from './ai';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
 // shows every other note as a Keep-style card. Colour, pin, archive and the card's place live in
@@ -171,7 +171,8 @@ async function preview(id: string) {
 	const { files, links } = await attachedFiles(body);
 	let shown = audio ? body.replace(audio.link, '') : body;
 	for (const link of links) shown = shown.replace(link, '');
-	return { id, updated: note.updated_time, body: keepTasks(shown), image: await firstImage(body), audio: audio?.url || null, files };
+	// askFiles: the kinds of file Ask JotDrop's card menu can send (a recording, a photo, a PDF).
+	return { id, updated: note.updated_time, body: keepTasks(shown), image: await firstImage(body), audio: audio?.url || null, files, askFiles: await aiFileKinds(body) };
 }
 
 async function tagMap(): Promise<Map<string, string[]>> {
@@ -351,6 +352,7 @@ const answerAi = setupAsk({
 	tagId,
 	hasListLink,
 	notifyBoards,
+	resourceBytes,
 	colors: COLORS,
 });
 

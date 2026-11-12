@@ -42,11 +42,14 @@ function scripted(body) {
 
 globalThis.fetch = async (url, init = {}) => {
   if (init.signal?.aborted) throw init.signal.reason ?? new DOMException('Stopped.', 'AbortError');
-  const body = init.body ? JSON.parse(init.body) : null;
+  // A recording for OpenAI goes as multipart bytes; everything else is JSON.
+  const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body ?? null;
   calls.push({ url, headers: init.headers, body });
   if (!String(url).startsWith('http://127.0.0.1') && init.headers?.Authorization !== `Bearer ${KEY}`) return new Response(JSON.stringify({ error: { message: `Incorrect API key provided: ${String(init.headers?.Authorization).slice(7)}` } }), { status: 401 });
   if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'gpt-6-luna' }, { id: 'gpt-6.1-terra' }, { id: 'text-embedding-9' }] });
-  sent.push(body.messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n'));
+  if (String(url).endsWith('/audio/transcriptions')) return Response.json({ text: ' Melk en brood halen. ', usage: { type: 'duration', seconds: 7 } });
+  const words = (content) => (typeof content === 'string' ? content : content.filter((part) => part.type === 'text').map((part) => part.text).join('\n'));
+  sent.push(body.messages.filter((m) => m.role === 'user').map((m) => words(m.content)).join('\n'));
   const message = { role: 'assistant', ...service(body) };
   return Response.json({ choices: [{ index: 0, message, finish_reason: message.tool_calls ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 120, completion_tokens: 30 } });
 };
@@ -55,6 +58,7 @@ function seed() {
   joplin.notes.clear();
   joplin.tags.clear();
   joplin.links.clear();
+  joplin.resources.clear();
   joplin.posted.length = 0;
   joplin.onPost = null;
   joplin.settings = {};
@@ -70,7 +74,21 @@ function seed() {
   add('n9', 'melk versleuteld', 'melk', { encryption_applied: 1 });
   joplin.tags.set('tag1', { id: 'tag1', title: 'thuis' });
   joplin.links.add('tag1/n2');
+  // Version 2: a note with a photo, a PDF, a recording, a drawing, a HEIC photo, a photo too large and a link to a note.
+  const file = (id, title, mime, bytes, size = bytes.length) => joplin.resources.set(id, { id, title, mime, file_extension: title.split('.').pop(), size, bytes });
+  file(R.photo, 'bon.jpg', 'image/jpeg', new Uint8Array([0xff, 0xd8, 0xff, 0xe0]));
+  file(R.pdf, 'scan.pdf', 'application/pdf', new TextEncoder().encode('%PDF-1.4 bon'));
+  file(R.memo, 'memo.m4a', 'audio/mp4', new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]));
+  file(R.drawing, 'drawing-2026-11-12 101500.png', 'image/png', new Uint8Array([137, 80]));
+  file(R.heic, 'IMG_1.heic', 'image/heic', new Uint8Array([1, 2, 3]));
+  file(R.big, 'groot.jpg', 'image/jpeg', new Uint8Array([0xff, 0xd8]), 5 * 1048576);
+  add('n10', 'Bon wasmachine', `Gekocht.\n\n![bon.jpg](:/${R.photo})\n[scan.pdf](:/${R.pdf})\n[memo.m4a](:/${R.memo})\n![drawing](:/${R.drawing})\n![IMG_1.heic](:/${R.heic})\n![groot.jpg](:/${R.big})\n[Wifi](:/${'b'.repeat(32)})\n`);
+  joplin.notes.get('n7').body += `\n![bon.jpg](:/${R.photo})`;
 }
+
+// Resource ids are 32 hex characters, as in Joplin.
+const R = { photo: '1'.repeat(32), pdf: '2'.repeat(32), memo: '3'.repeat(32), drawing: '4'.repeat(32), heic: '5'.repeat(32), big: '6'.repeat(32) };
+const b64 = (bytes) => Buffer.from(bytes).toString('base64');
 
 beforeEach(async () => {
   seed();
@@ -89,6 +107,7 @@ beforeEach(async () => {
     tagId: async (title) => ([...joplin.tags.values()].find((tag) => tag.title === title) || await globalThis.__joplinData.post(['tags'], null, { title })).id,
     hasListLink: (id) => linked.has(id),
     notifyBoards: async () => {},
+    resourceBytes: async (id) => { helperCalls.push(['resourceBytes', id]); const found = joplin.resources.get(id); if (!found?.bytes) throw new Error('not here'); return found.bytes; },
     colors: new Set(['red', 'blue']),
   });
   // A change nobody answers would wait forever: unless a test says otherwise, the answer is no.
@@ -309,6 +328,154 @@ test('the window and the README tell where the key is on each platform', () => {
   assert.match(readme, /The key is not encrypted on the phone/);
   assert.match(readme, /Notes with a live list link can go along/);
   assert.ok(!/On Android it comes later/.test(readme));
+});
+
+test('files: a note lists its photos, PDFs and recordings, never a drawing, with why one cannot go', async () => {
+  await on();
+  assert.deepEqual((await ai.aiFileKinds(joplin.notes.get('n10').body)).sort(), ['audio', 'image', 'pdf']);
+  assert.deepEqual(await ai.aiFileKinds('Geen bijlagen.'), []);
+  const { files } = await answer({ type: 'aiFiles', noteId: 'n10' });
+  assert.deepEqual(files.map((file) => [file.name, file.kind]), [['bon.jpg', 'image'], ['scan.pdf', 'pdf'], ['memo.m4a', 'audio'], ['IMG_1.heic', 'image'], ['groot.jpg', 'image']]);
+  const problem = Object.fromEntries(files.map((file) => [file.name, file.problem]));
+  assert.equal(problem['bon.jpg'], '');
+  assert.equal(problem['scan.pdf'], '');
+  assert.equal(problem['memo.m4a'], 'OpenAI cannot listen to recordings. Gemini can.');
+  assert.equal(problem['IMG_1.heic'], 'Joplin sends JPEG, PNG, WebP and GIF photos only.');
+  assert.equal(problem['groot.jpg'], 'Larger than 4 MiB, too large to send.');
+  // Writing out a recording is another thing: OpenAI can, Claude cannot.
+  const memo = await answer({ type: 'aiFiles', noteId: 'n10', action: 'transcribe' });
+  assert.deepEqual(memo.files.map((file) => [file.name, file.problem]), [['memo.m4a', '']]);
+  await answer({ type: 'aiSave', provider: 'anthropic', key: KEY });
+  assert.equal((await answer({ type: 'aiFiles', noteId: 'n10', action: 'transcribe' })).files[0].problem, 'Claude cannot listen to recordings. Gemini and OpenAI can.');
+  assert.deepEqual((await answer({ type: 'aiFiles', noteId: 'n10', action: 'receipt' })).files.map((file) => file.kind), ['image', 'pdf', 'image', 'image']);
+  assert.ok(!helperCalls.some(([name]) => name === 'resourceBytes'), 'listing reads no bytes');
+});
+
+test('a question about a note sends no file unless it is ticked, and then only that one', async () => {
+  await on();
+  service = () => ({ content: 'Een bon van de wasmachine.' });
+  const plain = await ask('wat staat er in de bon van de wasmachine?', { noteId: 'n10' });
+  assert.equal(plain.stop, 'done');
+  assert.deepEqual(plain.files, []);
+  assert.ok(!JSON.stringify(calls).includes(b64(joplin.resources.get(R.photo).bytes)), 'no file without a tick');
+  assert.ok(!helperCalls.some(([name]) => name === 'resourceBytes'));
+  calls = [];
+  const ticked = await ask('wat staat er in de bon van de wasmachine?', { noteId: 'n10', files: [R.photo] });
+  assert.equal(ticked.stop, 'done');
+  assert.deepEqual(ticked.files, [{ name: 'bon.jpg', kind: 'image', bytes: 4 }]);
+  const parts = calls[0].body.messages[1].content;
+  assert.deepEqual(parts.filter((part) => part.type === 'image_url').map((part) => part.image_url.url), [`data:image/jpeg;base64,${b64(joplin.resources.get(R.photo).bytes)}`]);
+  assert.ok(!JSON.stringify(calls).includes(b64(joplin.resources.get(R.pdf).bytes)), 'the PDF stayed home');
+  assert.ok(calls[0].body.tools?.length, 'a question keeps its tools');
+});
+
+test('a file that is not in the note, or cannot go, is refused before anything goes out', async () => {
+  await on();
+  assert.match((await ask('lees dit', { noteId: 'n3', files: [R.photo] })).error, /no longer in this note/);
+  assert.match((await ask('lees dit', { noteId: 'n10', files: [R.drawing] })).error, /no longer in this note/);
+  assert.match((await ask('lees dit', { noteId: 'n10', files: [R.heic] })).error, /IMG_1\.heic: Joplin sends JPEG, PNG, WebP and GIF photos only/);
+  assert.match((await ask('lees dit', { noteId: 'n10', files: [R.big] })).error, /groot\.jpg: Larger than 4 MiB/);
+  assert.match((await ask('lees dit', { noteId: 'n10', files: [R.memo] })).error, /OpenAI cannot listen to recordings/);
+  // Joplin's size can be wrong, or the file not synced yet: the bytes are checked again, and a missing file says so.
+  joplin.resources.get(R.photo).bytes = new Uint8Array(4 * 1048576 + 1);
+  assert.match((await ask('lees dit', { noteId: 'n10', files: [R.photo] })).error, /bon\.jpg is larger than 4 MiB/);
+  joplin.resources.get(R.pdf).bytes = undefined;
+  assert.match((await ask('lees dit', { noteId: 'n10', files: [R.pdf] })).error, /scan\.pdf is not on this computer yet/);
+  assert.equal(calls.length, 0, 'nothing went out');
+});
+
+test('a note with a live list link keeps its files home', async () => {
+  await on();
+  assert.deepEqual((await answer({ type: 'aiFiles', noteId: 'n7' })).files, []);
+  assert.match((await ask('lees dit', { noteId: 'n7', files: [R.photo] })).error, /live list link/);
+  await answer({ type: 'aiSave', provider: 'openai', key: '', includeShared: true });
+  assert.equal((await answer({ type: 'aiFiles', noteId: 'n7' })).files.length, 1);
+});
+
+test('transcribe: the recording alone to the own address of OpenAI, no notes, no tools', async () => {
+  await on();
+  const result = await ask('Write out this recording as text.', { noteId: 'n10', action: 'transcribe', files: [R.memo] });
+  assert.equal(result.stop, 'done');
+  assert.equal(result.answer, 'Melk en brood halen.');
+  assert.deepEqual(result.usage, { input: 0, output: 0, seconds: 7 });
+  assert.equal(result.model, 'gpt-transcribe');
+  assert.equal(result.first, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/audio/transcriptions');
+  assert.ok(calls[0].body instanceof Uint8Array);
+  const text = Buffer.from(calls[0].body).toString('latin1');
+  assert.match(text, /name="model"\r\n\r\ngpt-transcribe/);
+  assert.match(text, /name="languages\[\]"\r\n\r\nnl\r\n/, 'the language of Joplin as a hint');
+  assert.ok(text.includes(Buffer.from(joplin.resources.get(R.memo).bytes).toString('latin1')));
+  assert.ok(!text.includes('Boodschappen') && !text.includes('<note'), 'no notes go along');
+  assert.match(calls[0].headers['Content-Type'], /^multipart\/form-data; boundary=/);
+  // A file action takes only its own kind of file, and one file.
+  assert.match((await ask('Write out this recording as text.', { noteId: 'n10', action: 'transcribe', files: [R.photo] })).error, /no longer in this note/);
+  assert.match((await ask('Write out this recording as text.', { noteId: 'n10', action: 'transcribe', files: [] })).error, /Choose a file first/);
+});
+
+test('read photo: the photo with the fixed request, no tools and no notes', async () => {
+  await on();
+  service = () => ({ content: 'Melk\nBrood' });
+  const result = await ask('Write out the text on this photo.', { noteId: 'n10', action: 'photo', files: [R.photo] });
+  assert.equal(result.answer, 'Melk\nBrood');
+  assert.equal(calls.length, 1);
+  const body = calls[0].body;
+  assert.equal(body.tools, undefined, 'no tools');
+  assert.match(body.messages[0].content, /You read a photo for the JotDrop notes app/);
+  assert.equal(body.messages.length, 2);
+  const parts = body.messages[1].content;
+  assert.deepEqual(parts.map((part) => part.type), ['image_url', 'text']);
+  assert.match(parts[1].text, /Write out the text on this photo, handwriting too/);
+  assert.ok(!JSON.stringify(body).includes('<note'));
+  assert.equal(await answer({ type: 'aiAddBelow', id: 'n10', text: result.answer }), true);
+  assert.match(joplin.notes.get('n10').body, /\n\nMelk\nBrood\n$/);
+});
+
+test('receipt: checked fields, Apply writes title, lines and drawer; a bad date or a changed note changes nothing', async () => {
+  await on();
+  joplin.tags.set('tag9', { id: 'tag9', title: 'paper drawer/work' });
+  const shown = await answer({ type: 'aiFiles', noteId: 'n10', action: 'receipt' });
+  assert.deepEqual(shown.drawers, ['work', 'Personal', 'Home']);
+  assert.equal(shown.drawer, '');
+  service = () => ({ content: 'Hier is het:\n```json\n{"title":"Wasmachine","shop":"MediaMarkt","amount":"499,00","currency":"eur","bought":"2026-11-01","delete":"n1","warrantyUntil":"morgen"}\n```' });
+  const result = await ask('Read this receipt.', { noteId: 'n10', action: 'receipt', files: [R.pdf] });
+  assert.equal(result.stop, 'done');
+  assert.deepEqual(result.receipt, { title: 'Wasmachine', shop: 'MediaMarkt', amount: '499,00', currency: 'EUR', bought: '2026-11-01' });
+  assert.equal(calls[0].body.tools, undefined, 'no tools for a receipt');
+  assert.match(calls[0].body.messages[1].content.at(-1).text, /title \(a short name for what was bought, in Dutch\)/);
+  assert.equal(result.updated, joplin.notes.get('n10').updated_time);
+  const before = joplin.notes.get('n10').body;
+  assert.match((await answer({ type: 'aiReceipt', id: 'n10', updated: result.updated, title: 'X', lines: 'Y', expires: 'soon', drawer: '' })).error, /Choose how long to keep it/);
+  assert.equal(joplin.notes.get('n10').body, before, 'a bad date changes nothing');
+  assert.deepEqual(await answer({ type: 'aiReceipt', id: 'n10', updated: result.updated, title: 'Wasmachine', lines: 'Shop: MediaMarkt\nAmount: 499,00 EUR', expires: '2028-11-01', drawer: 'work' }), { expires: '2028-11-01' });
+  assert.equal(joplin.notes.get('n10').title, 'Wasmachine');
+  assert.equal(joplin.notes.get('n10').body, `${before}\nShop: MediaMarkt\nAmount: 499,00 EUR\n`);
+  assert.deepEqual(helperCalls.at(-1), ['setPaper', 'n10', 'paper drawer/work', '2028-11-01', '1w']);
+  // The same answer again, now that the note changed: left alone.
+  assert.match((await answer({ type: 'aiReceipt', id: 'n10', updated: result.updated, title: 'Z', lines: '', expires: '2028-11-01', drawer: '' })).error, /changed while Ask JotDrop worked/);
+  assert.equal(joplin.notes.get('n10').title, 'Wasmachine');
+  // An answer without a usable receipt stays plain text.
+  service = () => ({ content: 'Ik zie geen bon.' });
+  assert.equal((await ask('Read this receipt.', { noteId: 'n10', action: 'receipt', files: [R.photo] })).receipt, null);
+});
+
+test('on Joplin for Android no file goes: Joplin cannot read the bytes for a plugin there, and the window says so', async () => {
+  try {
+    joplin.platform = 'mobile';
+    await ai.registerAiSettings();
+    await on();
+    assert.deepEqual(await ai.aiFileKinds(joplin.notes.get('n10').body), [], 'no file actions in the card menu');
+    const { files } = await answer({ type: 'aiFiles', noteId: 'n10' });
+    assert.equal(files.length, 5);
+    assert.ok(files.every((file) => file.problem === 'Joplin for Android does not let JotDrop read attached files. Use Joplin on your computer for this.'));
+    assert.match((await ask('lees dit', { noteId: 'n10', files: [R.photo] })).error, /Joplin for Android does not let JotDrop read attached files/);
+    assert.equal(calls.length, 0);
+    assert.ok(!helperCalls.some(([name]) => name === 'resourceBytes'));
+  } finally {
+    joplin.platform = undefined;
+    await ai.registerAiSettings();
+  }
 });
 
 test('source rules: no innerHTML, the key stays in the main process, one fetch', () => {
