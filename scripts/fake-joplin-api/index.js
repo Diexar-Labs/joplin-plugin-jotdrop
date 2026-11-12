@@ -1,7 +1,8 @@
 // A small Joplin for the Ask JotDrop test (test/ai.test.mjs): notes, tags and settings in memory, only the parts of
 // the plugin API that src/ai.ts uses. The test reaches the same state through globalThis.__joplin.
 // One state, also when the test build and the test itself each load this file.
-const state = globalThis.__joplin ??= { notes: new Map(), tags: new Map(), links: new Set(), settings: {}, posted: [], onPost: null, clock: 1000 };
+// resources: attachments by id, { id, title, mime, file_extension, size, bytes }; the test hands out bytes itself.
+const state = globalThis.__joplin ??= { notes: new Map(), tags: new Map(), links: new Set(), resources: new Map(), settings: {}, posted: [], onPost: null, clock: 1000 };
 
 const page = (items, query = {}) => {
   const limit = query.limit ?? 100, n = query.page ?? 1;
@@ -37,6 +38,7 @@ const joplin = {
       if (kind === 'notes') return pick(note(id), query.fields);
       if (kind === 'tags' && sub === 'notes') return page([...state.notes.values()].filter((row) => state.links.has(`${id}/${row.id}`)).map((row) => pick(row, query.fields)), query);
       if (kind === 'tags') return page([...state.tags.values()].map((tag) => pick(tag, query.fields)), query);
+      if (kind === 'resources') { const found = state.resources.get(id); if (!found) throw new Error(`no resource ${id}`); return pick(found, query.fields); }
       throw new Error(`get ${path.join('/')}`);
     },
     async post(path, _query, body) {

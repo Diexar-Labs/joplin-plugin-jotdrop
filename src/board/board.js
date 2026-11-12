@@ -40,6 +40,7 @@ const STRINGS = {
     connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
     openFile: (name) => `Open ${name}`, moreFiles: (n) => (n === 1 ? '+ 1 file' : `+ ${n} files`),
     ask: 'Ask JotDrop', askTitle: 'Ask JotDrop: AI with your own key', askNote: 'Ask JotDrop about this note…', summarize: 'Summarize with AI',
+    transcribe: 'Transcribe with AI', readPhoto: 'Read photo with AI', receipt: 'Receipt to Paper drawer…',
   },
   nl: {
     checkedItems: (n) => `+ ${n} ${n === 1 ? 'afgevinkt item' : 'afgevinkte items'}`, openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
@@ -84,6 +85,7 @@ const STRINGS = {
     connectFirst: 'Koppel eerst JotDrop Cloud. Daarna kun je een notitie via een link delen.', plusSite: 'JotDrop Plus op de website', liveBadge: 'Live lijstlink',
     openFile: (name) => `${name} openen`, moreFiles: (n) => (n === 1 ? '+ 1 bestand' : `+ ${n} bestanden`),
     ask: 'Vraag JotDrop', askTitle: 'Vraag JotDrop: AI met je eigen sleutel', askNote: 'Vraag JotDrop over deze notitie…', summarize: 'Samenvatten met AI',
+    transcribe: 'Uitschrijven met AI', readPhoto: 'Foto lezen met AI', receipt: 'Bon naar de Paper drawer…',
   },
 };
 
@@ -156,6 +158,12 @@ const FILE_ICONS = {
   video: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
   file: 'M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z',
 };
+// The files Ask JotDrop can send, in its "What goes along" list; the kind is also there in words.
+const ASK_FILE_ICONS = {
+  image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  pdf: FILE_ICONS.pdf,
+  audio: 'M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z',
+};
 const LINK = 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z';
 
 async function post(message) {
@@ -165,7 +173,7 @@ async function post(message) {
 }
 
 // Ask JotDrop runs in the plugin's main process; this page shows its window (ask.js).
-const askJotDrop = createAsk({ h, post, toast, openCard });
+const askJotDrop = createAsk({ h, post, toast, openCard, fileIcon: (kind) => icon(ASK_FILE_ICONS[kind] || FILE_ICONS.file) });
 
 function toast(text) {
   if (!els) return;
@@ -758,7 +766,7 @@ function cardEl(c) {
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
       onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
-    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), askButton(c), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
+    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), askButton(c, shownNote.askFiles), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     openCard(c.id);
@@ -920,16 +928,22 @@ function closeMenu() {
 
 // ---- Ask JotDrop ----
 
-function askButton(c) {
+// kinds: the files of the card Ask JotDrop can send (from the preview). Version 2 adds an item only for a card with
+// such a file: a recording to write out, a photo to read, a photo or PDF of a receipt.
+function askButton(c, kinds = []) {
   const button = h('button', { type: 'button', class: 'jd-act', title: t.ask, 'aria-label': t.ask, 'aria-haspopup': 'menu',
     onclick: (e) => {
       e.stopPropagation();
       closeMenu();
       const note = { id: c.id, title: c.title, listLink: c.listLink };
-      const go = (summarize) => () => { closeMenu(); askJotDrop.open({ note, summarize }); };
+      const go = (options) => () => { closeMenu(); askJotDrop.open({ note, ...options }); };
+      const item = (label, options) => h('button', { type: 'button', role: 'menuitem', onclick: go(options) }, label);
       showMenu(h('div', { class: 'card-menu', role: 'menu' },
-        h('button', { type: 'button', role: 'menuitem', onclick: go(false) }, t.askNote),
-        h('button', { type: 'button', role: 'menuitem', onclick: go(true) }, t.summarize)), button);
+        item(t.askNote, {}),
+        item(t.summarize, { summarize: true }),
+        kinds.includes('audio') ? item(t.transcribe, { action: 'transcribe' }) : null,
+        kinds.includes('image') ? item(t.readPhoto, { action: 'photo' }) : null,
+        kinds.includes('image') || kinds.includes('pdf') ? item(t.receipt, { action: 'receipt' }) : null), button);
     } }, icon(SPARKLES));
   return button;
 }

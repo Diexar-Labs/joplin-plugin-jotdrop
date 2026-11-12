@@ -83,7 +83,7 @@ Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins
 - **Tick checklists on the card.** ☐ becomes ☑, and your note is updated.
 - **Reminders.** Pick later today, tomorrow, next week or your own moment. JotDrop uses Joplin's own to-do alarm, so the reminder also works without the board.
 - **Share by link.** Send someone a read-only copy of a note, or a shopping list they can tick off in their browser. Needs JotDrop Cloud on Joplin desktop. [More below](#share-a-note-by-link).
-- **Ask JotDrop**, an optional AI assistant with your own key, on Joplin desktop and Joplin for Android: ask about your notes, add to a list, make a note or summarize one. A change to a note waits until you apply it. [More below](#ask-jotdrop-ai-with-your-own-key).
+- **Ask JotDrop**, an optional AI assistant with your own key, on Joplin desktop and Joplin for Android: ask about your notes, add to a list, make a note or summarize one. On the desktop it can also write out a voice memo, read a photo, or put a receipt in the Paper drawer. A change to a note waits until you apply it. [More below](#ask-jotdrop-ai-with-your-own-key).
 
 ### Find
 
@@ -199,12 +199,14 @@ On Joplin desktop and Joplin for Android, JotDrop has an optional AI assistant. 
 - **You see what goes along.** Before you send, the window lists the notes that go with your question: at most 20 notes with words of your question, found with Joplin's own search index in all your notebooks, the same notes the board shows. Clear a note to keep it out. While answering, the AI can read more of the notes that match your question, and afterwards the window tells you which ones. Notes in the trash never go along. On Joplin desktop with JotDrop Cloud connected, notes with a live list link stay out unless you allow them.
 - **Changes wait for you.** A new note is made at once. Adding to a note, replacing its text, its tags, a reminder or an expiry date first shows you the change, with + and - before each line, and you apply it or not. Ask JotDrop cannot delete, archive or share notes.
 - **Straight to the service you picked.** Your request and the notes that go along travel from Joplin on your computer or phone to that service, with your own key. No JotDrop server sits in between. On Joplin desktop the key is kept in Joplin's secure storage on that computer, not in your notes, and it does not sync. The service handles your request under its own terms. Some services may use what you send to improve their products, Google for example on the free tier of the Gemini API outside the EEA, Switzerland and the UK, so read the terms of the one you pick. With Ollama or another model on your own computer, your request and notes stay on that computer.
+- **Photos, PDFs and voice memos, only when you pick them.** When you ask about a note, its attached photos, PDFs and recordings show in the list, unticked. Tick one and it goes along with your question, as it is. On a card with such a file, the sparkles menu also has **Transcribe with AI**, **Read photo with AI** and **Receipt to Paper drawer…**. Each sends that one file with a fixed request: no other notes, and the AI cannot change anything. A receipt opens a screen with the title, shop, amount and day of purchase it found. You check it, choose how long to keep the receipt (1, 2, 3, 5 or 7 years), and nothing is saved until you select **Apply**. Not every service reads every kind of file: Claude cannot listen to recordings, Gemini and OpenAI can, and the window tells you before you send. Photos go as JPEG, PNG, WebP or GIF up to 4 MiB. A photo or recording can hold other people's details, so only send what you may share.
 - **Answers say where they come from.** In the window, each answer names the service and model that wrote it. If an answer is wrong or strange, **Report** lets you mail it to us. The report holds your question and the answer, not your notes or your key.
 
 On **Joplin for Android** Ask JotDrop works the same way, with a few differences:
 
 - **The key is not encrypted on the phone.** Joplin for Android keeps it in its own app data and does not use Android's key store for it. Android keeps that data away from other apps, but someone who gets into it, on a rooted phone for example, could read the key. It does not sync and never goes into your notes. You add it on each device.
 - **Notes with a live list link can go along.** Only Joplin desktop with JotDrop Cloud connected knows which notes have one. On Android, and on a desktop without the cloud, such a note goes along like any other note that matches. Clear it in the list before you send if you want to keep it out.
+- **No files from the phone.** Joplin for Android does not let a plugin read attached files, so photos, PDFs and recordings cannot go along there, and the card menu has no file actions. The window lists the files with that reason. Use Joplin on your computer for them.
 - **Ollama only on the phone itself.** On a phone, Ollama or another http address means a model running on that same phone. For a service somewhere else, use an https address.
 
 ## How it works
@@ -216,7 +218,7 @@ JotDrop for Joplin is deliberately simple plumbing:
 - **Ticking a box or writing a quick note** does change your note, because that is what you asked for. It stays a normal Joplin note.
 - **A reminder** is the one thing that changes how a note behaves in Joplin. Joplin only has alarms for to-dos, so a plain note becomes a to-do when you set one. Remove the reminder and it is a plain note again.
 - **Everything on your computer goes through Joplin's plugin API.** Without JotDrop Cloud and Ask JotDrop the plugin makes no network requests and needs no account.
-- **With Ask JotDrop turned on,** the plugin contacts the AI service you picked only when you send a request or load its list of models.
+- **With Ask JotDrop turned on,** the plugin contacts the AI service you picked only when you send a request or load its list of models. An attached file goes along only when you pick it.
 - **With JotDrop Cloud connected,** Joplin desktop asks the cloud for new notes every 30 seconds. It decrypts them on your computer with a key the server never sees. Its data about what came in stays in the plugin's own folder. Nothing goes back to the cloud, except a note you share by link yourself.
 
 Uninstall the plugin and your notes are still your Joplin notes. Only the board note and its notebook stay behind, and you can delete those.
@@ -283,6 +285,9 @@ Not for the board. Without JotDrop Cloud the plugin has no account and no server
 
 **Does JotDrop see what I ask Ask JotDrop?**
 No. Your request and the notes that go along travel from Joplin on your computer or phone straight to the AI service you picked, with your own key. With a local model such as Ollama on your own computer, they stay on that computer.
+
+**Can Ask JotDrop read a photo, a PDF or a voice memo?**
+On Joplin desktop, yes, when you tick the file or use **Transcribe with AI**, **Read photo with AI** or **Receipt to Paper drawer…** on its card. The file goes straight to the AI service you picked, and only that file. On Joplin for Android files cannot go along, because Joplin does not let a plugin read them there.
 
 **Can notes from the JotDrop app appear in Joplin?**
 Yes. [Connect JotDrop Cloud](#from-the-jotdrop-app-into-joplin) on Joplin desktop and they come in as ordinary notes. It goes one way, and whatever you changed in Joplin stays as you left it.
