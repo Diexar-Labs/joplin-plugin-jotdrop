@@ -253,6 +253,28 @@ test('test and load models: groups, the default picked, no key in the answer', a
   assert.match((await answer({ type: 'aiModels', provider: 'openai', key: 'sk-wrong-key-123456789xyz' })).error, /did not accept the key/);
 });
 
+test('OpenRouter: the model list is public, so a wrong key is caught by the key check and no list is asked', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url, headers: init.headers });
+    if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'openrouter/some-model' }] });
+    if (String(url).endsWith('/key')) return init.headers?.Authorization === `Bearer ${KEY}` ? Response.json({ data: { label: 'test' } }) : new Response(JSON.stringify({ error: { message: 'User not found.' } }), { status: 401 });
+    throw new Error(`unexpected ${url}`);
+  };
+  try {
+    const wrong = await answer({ type: 'aiModels', provider: 'openrouter', key: 'sk-or-wrong-key-123456789' });
+    assert.match(wrong.error, /did not accept the key/);
+    assert.ok(!calls.some((call) => String(call.url).endsWith('/models')), 'no model list for a wrong key');
+    assert.ok(!JSON.stringify(wrong).includes('sk-or-wrong-key-123456789'));
+    calls.length = 0;
+    const good = await answer({ type: 'aiModels', provider: 'openrouter', key: KEY });
+    assert.equal(good.count, 1);
+    assert.deepEqual(calls.map((call) => String(call.url).split('/').pop()), ['key', 'models']);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
 test('an own address on this computer counts as local', async () => {
   await answer({ type: 'aiSave', provider: 'custom', key: '', baseUrl: 'http://127.0.0.1:9871/v1' });
   service = () => ({ content: 'Lokaal.' });
