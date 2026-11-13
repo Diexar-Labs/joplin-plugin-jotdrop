@@ -22,7 +22,7 @@ export function createDuplicates({ h, post, openAsk }) {
     const list = h('ul', { class: 'jd-dup-list' });
     me.append(h('div', { class: 'jd-ask' },
       h('div', { class: 'jd-ask-head' }, h('h2', { text: 'Find duplicates' }), h('div', { class: 'jd-ask-head-actions' }, h('button', { type: 'button', onclick: close }, 'Close'))),
-      h('p', { class: 'jd-ask-note', text: `JotDrop compares your notes on ${here()}. Finding duplicates uses no AI and sends nothing. "Merge with AI" is a separate choice: it sends the two notes you pick to your AI service. Notes with a live list link are left out, and so are very short notes and the trash.` }),
+      h('p', { class: 'jd-ask-note', text: `JotDrop compares your notes on ${here()}. Finding duplicates uses no AI and sends nothing. "Merge with AI" is a separate choice: it sends the two notes you pick to your AI service.${mobile() ? '' : ' Notes with a live list link are left out (when JotDrop Cloud is connected on this computer).'} Very short notes and the trash are left out too.` }),
       status, list));
     me.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
     me.addEventListener('click', (e) => e.stopPropagation());
