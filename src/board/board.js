@@ -5,6 +5,7 @@ import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mj
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
 import { DEFAULT_WARN, INTRO, PAPER_DRAWER, WARN_OPTIONS, drawerName, expiresBadge, inDrawer, isPaperDrawer, shortDate } from '../cloud-shared/paper.mjs';
 import { createAsk } from './ask.js';
+import { createDuplicates } from './duplicates.js';
 import { sizeText } from '../fileChips.mjs';
 
 const PAGE = 60;
@@ -39,7 +40,7 @@ const STRINGS = {
     ticked: (by, item) => `✓ ${by} ticked "${item}"`, addedItem: (by, item) => `${by} added "${item}"`, justNow: 'just now', minAgo: (n) => `${n} min. ago`, hrAgo: (n) => `${n} hr. ago`,
     connectFirst: 'Connect JotDrop Cloud first. Then you can share a note by link.', plusSite: 'JotDrop Plus on the website', liveBadge: 'Live list link',
     openFile: (name) => `Open ${name}`, moreFiles: (n) => (n === 1 ? '+ 1 file' : `+ ${n} files`),
-    ask: 'Ask JotDrop', askTitle: 'Ask JotDrop: AI with your own key', askNote: 'Ask JotDrop about this note…', summarize: 'Summarize with AI',
+    ask: 'Ask JotDrop', askTitle: 'Ask JotDrop: AI with your own key', askNote: 'Ask JotDrop about this note…', dup: 'Find duplicates', dupTitle: 'Find duplicate notes on this device, without AI', summarize: 'Summarize with AI',
     transcribe: 'Transcribe with AI', readPhoto: 'Read photo with AI', receipt: 'Receipt to Paper drawer…',
   },
   nl: {
@@ -84,7 +85,7 @@ const STRINGS = {
     ticked: (by, item) => `✓ ${by} vinkte "${item}" af`, addedItem: (by, item) => `${by} voegde "${item}" toe`, justNow: 'zojuist', minAgo: (n) => `${n} min. geleden`, hrAgo: (n) => `${n} uur geleden`,
     connectFirst: 'Koppel eerst JotDrop Cloud. Daarna kun je een notitie via een link delen.', plusSite: 'JotDrop Plus op de website', liveBadge: 'Live lijstlink',
     openFile: (name) => `${name} openen`, moreFiles: (n) => (n === 1 ? '+ 1 bestand' : `+ ${n} bestanden`),
-    ask: 'Vraag JotDrop', askTitle: 'Vraag JotDrop: AI met je eigen sleutel', askNote: 'Vraag JotDrop over deze notitie…', summarize: 'Samenvatten met AI',
+    ask: 'Vraag JotDrop', askTitle: 'Vraag JotDrop: AI met je eigen sleutel', askNote: 'Vraag JotDrop over deze notitie…', dup: 'Dubbele notities', dupTitle: 'Dubbele notities zoeken op dit apparaat, zonder AI', summarize: 'Samenvatten met AI',
     transcribe: 'Uitschrijven met AI', readPhoto: 'Foto lezen met AI', receipt: 'Bon naar de Paper drawer…',
   },
 };
@@ -158,6 +159,8 @@ const FILE_ICONS = {
   video: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
   file: 'M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z',
 };
+// Two sheets for Find duplicates, the same sign as in Obsidian.
+const COPY = 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z';
 // The files Ask JotDrop can send, in its "What goes along" list; the kind is also there in words.
 const ASK_FILE_ICONS = {
   image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
@@ -174,6 +177,8 @@ async function post(message) {
 
 // Ask JotDrop runs in the plugin's main process; this page shows its window (ask.js).
 const askJotDrop = createAsk({ h, post, toast, openCard, fileIcon: (kind) => icon(ASK_FILE_ICONS[kind] || FILE_ICONS.file) });
+// Find duplicates compares on this device; "Merge with AI" hands the pair to the Ask window.
+const duplicates = createDuplicates({ h, post, openAsk: (options) => askJotDrop.open(options) });
 
 function toast(text) {
   if (!els) return;
@@ -349,6 +354,7 @@ function buildShell() {
       toast(t.drawingSaved);
     }) }, icon(PENCIL), ` ${t.drawing}`);
   const askChip = h('button', { type: 'button', class: 'jd-chip jd-draw jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`);
+  const dupChip = h('button', { type: 'button', class: 'jd-chip jd-draw jd-dup-chip', title: t.dupTitle, onclick: (e) => { e.stopPropagation(); duplicates.open(); } }, icon(COPY), ` ${t.dup}`);
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
@@ -363,7 +369,7 @@ function buildShell() {
   els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
-    h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, cloud));
+    h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, dupChip, cloud));
   document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toTop, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);

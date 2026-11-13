@@ -5,7 +5,10 @@ import { AiError, PROVIDERS, TRANSCRIBE_MODEL, createProvider, pickDefaultModel 
 import { selectNotes, words } from './cloud-shared/ai/context.mjs';
 import { LIMITS, MIMES, capabilities, decodedLength, explain } from './cloud-shared/ai/parts.mjs';
 import { parseReceipt, receiptRequest } from './cloud-shared/ai/receipt.mjs';
-import { foldUnchanged } from './cloud-shared/diff.mjs';
+import { diffLines, foldUnchanged } from './cloud-shared/diff.mjs';
+import { digestRequest, wallClock, weekDigest } from './cloud-shared/ai/digest.mjs';
+import { findDuplicates, pairKey } from './cloud-shared/similar.mjs';
+import { mergeRequest } from './mergeRequest.mjs';
 import { PHOTO_SYSTEM, aiFileKind, appendedText, describeChange, fileRequest, modelGroups, plainBase64 } from './cloud-shared/ai-web.mjs';
 import { DEFAULT_WARN, PAPER_DRAWER, SUGGESTED_DRAWERS, drawerLabel, drawerName, isPaperDrawer, validExpires } from './cloud-shared/paper.mjs';
 import { bytesToBase64 } from './cloud-shared/crypto.mjs';
@@ -36,7 +39,7 @@ import manifest from './manifest.json';
 export const AI_PROVIDER_IDS = ['ollama', 'anthropic', 'openai', 'gemini', 'openrouter', 'custom'];
 type Config = { provider: string; key: string; model: string; baseUrl: string; includeShared: boolean };
 const OFF: Config = { provider: '', key: '', model: '', baseUrl: '', includeShared: false };
-type AiNote = { id: string; title: string; text: string; labels: string[]; updatedAt: string; shared: boolean; updated: number };
+type AiNote = { id: string; title: string; text: string; labels: string[]; updatedAt: string; shared: boolean; updated: number; reminder: string; expires: string };
 
 export type AskHelpers = {
 	allPages: (path: string[], query?: Record<string, unknown>) => Promise<any[]>;
@@ -49,6 +52,8 @@ export type AskHelpers = {
 	notifyBoards: () => Promise<void>;
 	resourceBytes: (id: string) => Promise<Uint8Array>;
 	colors: Set<string>;
+	/** The plugin's own values on a note (user data as the list returns it): the expiry date is one. */
+	userMeta: (raw: string | undefined) => Record<string, unknown>;
 };
 
 type FileKind = 'image' | 'pdf' | 'audio';
@@ -117,7 +122,7 @@ function fileProblem(file: AiFile, config: Config, action: string): string {
 }
 
 const POOL = 200;
-const NOTE_FIELDS = ['id', 'title', 'body', 'updated_time', 'user_data', 'is_conflict', 'deleted_time', 'encryption_applied'];
+const NOTE_FIELDS = ['id', 'title', 'body', 'updated_time', 'user_data', 'is_conflict', 'deleted_time', 'encryption_applied', 'todo_due', 'todo_completed'];
 
 // "This computer" on desktop, "this phone" on Joplin for Android, in the words of an error; also how this file tells
 // that it runs on Android.
@@ -131,6 +136,8 @@ export async function registerAiSettings() {
 		aiModel: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Ask JotDrop: model' },
 		aiBaseUrl: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Ask JotDrop: own address' },
 		aiIncludeShared: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Ask JotDrop: also notes with a live list link' },
+		// Find duplicates, "Keep both": the pairs to leave alone, on this device only (not synced, like the key).
+		aiDuplicatesKept: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Find duplicates: pairs to keep' },
 	});
 }
 
@@ -187,6 +194,7 @@ function today(now = new Date()): string {
 	return `${now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const oneLine = (text: unknown) => String(text ?? '').replace(/[\r\n]+/g, ' ').trim();
 // The fetch of the plugin's own process, straight to the service.
 const fetcher = (url: string, init?: RequestInit) => fetch(url, init);
@@ -205,7 +213,13 @@ export function setupAsk(helpers: AskHelpers) {
 		updatedAt: new Date(Number(note.updated_time) || 0).toISOString(),
 		shared: helpers.hasListLink(note.id),
 		updated: Number(note.updated_time) || 0,
+		// The week overview reads these two: the to-do alarm of a note that is not done, and the Paper drawer's expiry date.
+		reminder: Number(note.todo_due) > 0 && !Number(note.todo_completed) ? wallClock(new Date(Number(note.todo_due)), timeZone()) : '',
+		expires: validExpires(helpers.userMeta(note.user_data).expires) || '',
 	});
+
+	// Every usable note, for the week overview and Find duplicates: Joplin's whole list, a page at a time.
+	const everyNote = async (): Promise<AiNote[]> => (await helpers.allPages(['notes'], { fields: NOTE_FIELDS })).filter(usable).map(asAiNote);
 
 	// The notes with words of the request, from Joplin's index (a word counts from its start, as in the shared code),
 	// and the notes the user pinned.
@@ -344,7 +358,7 @@ export function setupAsk(helpers: AskHelpers) {
 
 	// Writing out a recording, reading a photo and reading a receipt are one request each, without tools or notes,
 	// with the longer AI time of files. The result takes the form of the assistant's report.
-	async function once(config: Config, action: string, parts: any[], locale: string, signal: AbortSignal) {
+	async function once(config: Config, action: string, parts: any[], locale: string, signal: AbortSignal, digest?: { text: string }) {
 		const report: any = { answer: '', sent: [], sources: [], actions: [], files: parts.map((part) => ({ name: part.name, kind: part.kind, bytes: decodedLength(part.data) })), rounds: 1, usage: { input: 0, output: 0 }, stop: 'done' };
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(new DOMException('The AI service took too long.', 'TimeoutError')), FILE_TIMEOUT_MS);
@@ -354,7 +368,11 @@ export function setupAsk(helpers: AskHelpers) {
 			const ai = createProvider({ provider: config.provider, key: config.key, model: config.model, baseUrl: config.baseUrl }, fetcher);
 			let answer: any;
 			if (action === 'transcribe') answer = await ai.transcribe({ audio: parts[0], language: locale, signal: controller.signal });
-			else if (action === 'receipt') {
+			// The week overview has no tools: what the notes say can never make or change a note.
+			else if (action === 'digest') {
+				const { system, text } = digestRequest({ language: language(locale), date: today(), timeZone: timeZone(), text: String(digest?.text ?? '') });
+				answer = await ai.complete({ system, messages: [{ role: 'user', text }], tools: [], signal: controller.signal });
+			} else if (action === 'receipt') {
 				const { system, text } = receiptRequest(language(locale));
 				answer = await ai.complete({ system, messages: [{ role: 'user', text, parts }], tools: [], signal: controller.signal });
 			} else answer = await ai.complete({ system: PHOTO_SYSTEM, messages: [{ role: 'user', text: fileRequest('photo'), parts }], tools: [], signal: controller.signal });
@@ -374,21 +392,44 @@ export function setupAsk(helpers: AskHelpers) {
 		return report;
 	}
 
+	// The overview of the week: one request without tools, with the digest of the notes (not the notes) in it.
+	async function digestReport(config: Config, digest: any, locale: string, signal: AbortSignal) {
+		const report = await once(config, 'digest', [], locale, signal, digest);
+		report.sent = digest.notes.map(({ id, title }: any) => ({ id, title }));
+		const said = String(report.answer).toLowerCase();
+		report.sources = report.sent.filter((note: any) => String(note.title).length >= 3 && said.includes(String(note.title).toLowerCase()));
+		return report;
+	}
+
 	async function ask(message: any, view: string) {
 		const config = await loadConfig();
-		const request = String(message.request || '').trim();
+		// "This week" and "Merge with AI" are fixed requests of their own: the page only says which, never the words.
+		const overview = message.mode === 'digest' ? 'digest' : message.mode === 'merge' ? 'merge' : '';
+		const pair = overview === 'merge' ? { older: String(message.older || ''), newer: String(message.newer || '') } : null;
+		const request = overview === 'digest' ? 'Overview of my week' : pair ? mergeRequest({ older: { id: pair.older }, newer: { id: pair.newer } }) : String(message.request || '').trim();
 		if (!request) throw new Error('Type a request first.');
-		const noteId = message.noteId ? String(message.noteId) : '';
+		const noteId = !overview && message.noteId ? String(message.noteId) : '';
 		const action = noteId && isAction(message.action) ? String(message.action) : '';
 		const summarize = !action && message.mode === 'summarize' && noteId;
 		const files = await chosenFiles(config, noteId, summarize ? [] : (message.files || []).map(String), action);
 		if (action && files.length !== 1) throw new Error('Choose a file first.');
 		const excluded = new Set<string>((message.excluded || []).map(String));
-		const pinned = noteId ? [noteId] : [];
-		// A file action sends the file only: no notes, no labels.
-		const notes = action ? [] : (await pool(request, pinned, summarize ? noteId : undefined)).filter((note) => !excluded.has(note.id));
-		const labels = action ? [] : await withLabels(notes);
-		const first = new Set(pick(notes, request, pinned, config.includeShared).map((note) => note.id));
+		const pinned = pair ? [...new Set([pair.older, pair.newer])] : noteId ? [noteId] : [];
+		const zone = timeZone();
+		let digest: any;
+		// A file action sends the file only: no notes, no labels. The week sends the digest of the notes JotDrop picks.
+		let notes: AiNote[];
+		if (overview === 'digest') {
+			notes = (await everyNote()).filter((note) => !excluded.has(note.id));
+			digest = weekDigest(notes, { now: new Date(), timeZone: zone, includeShared: config.includeShared });
+			if (!digest.notes.length) throw new Error('Nothing to write about: no notes changed in the last 7 days, and no reminder or expiry date is coming up.');
+		} else notes = action ? [] : (await pool(pair ? '' : request, pinned, summarize ? noteId : undefined)).filter((note) => !excluded.has(note.id));
+		const labels = action || digest ? [] : await withLabels(notes);
+		const picks = digest ? [] : pick(notes, request, pinned, config.includeShared);
+		// A merge replaces the newer note's text: the AI must see all of both notes, or the merged text loses the rest.
+		if (pair && picks.length < 2) throw new Error('Both notes must go along to merge them. Tick both, or search for duplicates again.');
+		if (pair && picks.some((note) => note.truncated)) throw new Error('These notes are too long to merge with AI: the AI would not see all of their text. Compare them and merge them yourself.');
+		const first = new Set(digest ? digest.notes.map((note: any) => note.id) : picks.map((note) => note.id));
 		const seen = new Map(notes.map((note) => [note.id, note.updated]));
 		const titles = new Map(notes.map((note) => [note.id, note.title]));
 		const opened: { id?: string } = {};
@@ -403,7 +444,7 @@ export function setupAsk(helpers: AskHelpers) {
 			const parts: any[] = [];
 			for (const file of files) parts.push(await readPart(file));
 			if (run.controller.signal.aborted) throw new DOMException('Stopped.', 'AbortError');
-			report = action ? await once(config, action, parts, locale, run.controller.signal) : await runAssistant({
+			report = digest ? await digestReport(config, digest, locale, run.controller.signal) : action ? await once(config, action, parts, locale, run.controller.signal) : await runAssistant({
 				request, notes, labels, pinned, includeShared: config.includeShared,
 				settings: { language: language(locale), date: today(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
 				config: { provider: config.provider, key: config.key, model: config.model, baseUrl: config.baseUrl },
@@ -429,7 +470,7 @@ export function setupAsk(helpers: AskHelpers) {
 			answer: report.answer,
 			sources: report.sources.map((note: any) => ({ id: note.id, title: note.title })),
 			actions: report.actions.filter((action: any) => !['search_notes', 'read_note'].includes(action.tool)).map((action: any) => ({
-				tool: action.tool, status: action.status, reason: action.reason || '',
+				tool: action.tool, status: action.status, reason: action.reason || '', id: String(action.input?.id || ''),
 				title: action.tool === 'create_note' ? oneLine(action.input?.title) || 'a note' : titles.get(action.input?.id) || 'a note',
 				made: action.tool === 'create_note' && action.status === 'done' ? action.result?.id || '' : '',
 			})),
@@ -487,6 +528,56 @@ export function setupAsk(helpers: AskHelpers) {
 		return { expires: day };
 	}
 
+	// Find duplicates (Ask JotDrop v2, part E): compared here, on this device, without AI and without sending anything.
+	// "Keep both" is a list of pairs in a setting of this device; it does not sync.
+	const keptPairs = async (): Promise<string[]> => {
+		try {
+			const list = JSON.parse(String(await joplin.settings.value('aiDuplicatesKept') || '[]'));
+			return Array.isArray(list) ? list.filter((key) => typeof key === 'string') : [];
+		} catch {
+			return [];
+		}
+	};
+
+	async function duplicates() {
+		const config = await loadConfig();
+		const notes = await everyNote();
+		const byId = new Map(notes.map((note) => [note.id, note]));
+		const { pairs, complete } = findDuplicates(notes, { dismissed: await keptPairs() });
+		const shown = (id: string) => { const note = byId.get(id)!; return { id, title: note.title || 'Untitled', updatedAt: note.updatedAt }; };
+		return { complete, aiOn: Boolean(config.provider), pairs: pairs.map((pair: any) => ({ older: shown(pair.a), newer: shown(pair.b), kind: pair.kind, score: pair.score, drop: pair.drop })) };
+	}
+
+	// What changed from the older note to the newer one, line by line (null when the notes are too long to compare).
+	async function compareNotes(message: any) {
+		const read = async (id: string) => {
+			const note = await joplin.data.get(['notes', id], { fields: ['title', 'body', 'deleted_time'] });
+			if (!note || Number(note.deleted_time)) throw new Error('This note is gone.');
+			return `${note.title || ''}\n\n${note.body || ''}`;
+		};
+		const lines = diffLines(await read(String(message.a)), await read(String(message.b)));
+		return { lines: lines ? foldUnchanged(lines).map((line: any) => ({ ...line, sign: line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' ' })) : null };
+	}
+
+	async function keepBoth(message: any) {
+		const list = await keptPairs();
+		const key = pairKey(String(message.a), String(message.b));
+		if (!list.includes(key)) list.push(key);
+		await joplin.settings.setValue('aiDuplicatesKept', JSON.stringify(list));
+		return true;
+	}
+
+	// Moving a note to the trash is the user's own click, here and after a merge. Joplin's trash, so it can come back.
+	async function trashNote(message: any) {
+		const id = String(message.id || '');
+		const note = await joplin.data.get(['notes', id], { fields: ['id', 'deleted_time', 'is_conflict', 'encryption_applied', 'user_data'] });
+		if (!note || Number(note.deleted_time)) throw new Error('This note is already in the trash.');
+		if (!usable(note) || helpers.hasListLink(id)) throw new Error('This note cannot be moved to the trash from here.');
+		await joplin.data.delete(['notes', id]);
+		await helpers.notifyBoards();
+		return true;
+	}
+
 	/** The settings without the key: the board only learns whether one is saved. */
 	async function settingsShown() {
 		const config = await loadConfig();
@@ -540,6 +631,17 @@ export function setupAsk(helpers: AskHelpers) {
 				return { notes: pick(notes, String(message.request || ''), pinned, config.includeShared).map(({ id, title, truncated }) => ({ id, title, truncated })) };
 			}
 			case 'aiAsk': return await ask(message, view);
+			// What "This week" would send now, minus the notes cleared in the window.
+			case 'aiWeek': {
+				const config = await loadConfig();
+				const excluded = new Set<string>((message.excluded || []).map(String));
+				const digest = weekDigest((await everyNote()).filter((note) => !excluded.has(note.id)), { now: new Date(), timeZone: timeZone(), includeShared: config.includeShared });
+				return { notes: digest.notes.map(({ id, title }: any) => ({ id, title })), left: digest.left };
+			}
+			case 'aiDuplicates': return await duplicates();
+			case 'aiCompare': return await compareNotes(message);
+			case 'aiKeep': return await keepBoth(message);
+			case 'aiTrash': return await trashNote(message);
 			case 'aiFiles': return await filesShown(message);
 			case 'aiReceipt': return await applyReceipt(message);
 			case 'aiConfirmAnswer': {

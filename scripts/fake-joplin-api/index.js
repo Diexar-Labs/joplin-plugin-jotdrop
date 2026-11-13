@@ -35,6 +35,7 @@ const joplin = {
       const [kind, id, sub] = path;
       if (kind === 'search') return page(search(query.query).map((row) => pick(row, query.fields)), query);
       if (kind === 'notes' && sub === 'tags') return page(tagsOf(id).map((tag) => pick(tag, query.fields)), query);
+      if (kind === 'notes' && id === undefined) return page([...state.notes.values()].filter((row) => !row.deleted_time).map((row) => pick(row, query.fields)), query);
       if (kind === 'notes') return pick(note(id), query.fields);
       if (kind === 'tags' && sub === 'notes') return page([...state.notes.values()].filter((row) => state.links.has(`${id}/${row.id}`)).map((row) => pick(row, query.fields)), query);
       if (kind === 'tags') return page([...state.tags.values()].map((tag) => pick(tag, query.fields)), query);
@@ -62,6 +63,8 @@ const joplin = {
     async delete(path) {
       const [kind, id, sub, noteId] = path;
       if (kind === 'tags' && sub === 'notes') { state.links.delete(`${id}/${noteId}`); return; }
+      // Joplin's trash: the note stays, with a deletion time.
+      if (kind === 'notes' && sub === undefined) { const row = note(id); row.deleted_time = ++state.clock; return; }
       throw new Error(`delete ${path.join('/')}`);
     },
     async userDataSet(_type, id, key, value) {

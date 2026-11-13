@@ -354,6 +354,7 @@ const answerAi = setupAsk({
 	notifyBoards,
 	resourceBytes,
 	colors: COLORS,
+	userMeta: readUserData,
 });
 
 // Errors travel back as { error } so the webview sees them the same way on desktop and mobile.

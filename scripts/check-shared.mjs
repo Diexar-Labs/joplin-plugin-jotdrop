@@ -32,9 +32,9 @@ if (differs) {
 }
 
 // src/cloud-shared/ holds whole copies of JotDrop's cloud code: they must match JotDrop main to the byte.
-const CLOUD_FILES = { 'client.mjs': 'cloud/shared/client.mjs', 'crypto.mjs': 'cloud/shared/crypto.mjs', 'merge.mjs': 'cloud/shared/merge.mjs', 'sync.mjs': 'cloud/shared/sync.mjs', 'note.mjs': 'cloud/web/note.mjs', 'drawing.mjs': 'cloud/shared/drawing.mjs', 'drawing-editor.mjs': 'cloud/shared/drawing-editor.mjs', 'paper.mjs': 'cloud/shared/paper.mjs', 'expiry.mjs': 'cloud/shared/expiry.mjs', 'links.mjs': 'cloud/shared/links.mjs', 'list-links.mjs': 'cloud/shared/list-links.mjs', 'diff.mjs': 'cloud/shared/diff.mjs', 'ai-web.mjs': 'cloud/web/ai-web.mjs', 'filekinds.json': 'cloud/shared/filekinds.json' };
+const CLOUD_FILES = { 'client.mjs': 'cloud/shared/client.mjs', 'crypto.mjs': 'cloud/shared/crypto.mjs', 'merge.mjs': 'cloud/shared/merge.mjs', 'sync.mjs': 'cloud/shared/sync.mjs', 'note.mjs': 'cloud/web/note.mjs', 'drawing.mjs': 'cloud/shared/drawing.mjs', 'drawing-editor.mjs': 'cloud/shared/drawing-editor.mjs', 'paper.mjs': 'cloud/shared/paper.mjs', 'expiry.mjs': 'cloud/shared/expiry.mjs', 'links.mjs': 'cloud/shared/links.mjs', 'list-links.mjs': 'cloud/shared/list-links.mjs', 'diff.mjs': 'cloud/shared/diff.mjs', 'ai-web.mjs': 'cloud/web/ai-web.mjs', 'filekinds.json': 'cloud/shared/filekinds.json', 'similar.mjs': 'cloud/shared/similar.mjs' };
 // Ask JotDrop's shared core (cloud/shared/ai), in src/cloud-shared/ai/.
-for (const name of ['assistant', 'providers', 'tools', 'prompt', 'context', 'redact', 'markdown', 'parts', 'receipt']) CLOUD_FILES[`ai/${name}.mjs`] = `cloud/shared/ai/${name}.mjs`;
+for (const name of ['assistant', 'providers', 'tools', 'prompt', 'context', 'redact', 'markdown', 'parts', 'receipt', 'digest']) CLOUD_FILES[`ai/${name}.mjs`] = `cloud/shared/ai/${name}.mjs`;
 // Here the copies sit in one folder, so the web app's ai-web.mjs reaches '../shared/x' as './x'. Nothing else may differ.
 const asHere = (path, text) => (path === 'cloud/web/ai-web.mjs' ? text.replace(/from '\.\.\/shared\//g, "from './") : text);
 let stale = 0;
@@ -48,5 +48,19 @@ for (const [file, path] of Object.entries(CLOUD_FILES)) {
 }
 if (stale) {
   console.error(`\n${stale} copied cloud file(s) differ from JotDrop main. Copy the new version into src/cloud-shared/.`);
+  process.exit(1);
+}
+
+// "Merge with AI" says the same as the website, word for word (src/mergeRequest.mjs against mergeRequest in cloud/web/app.js).
+const MERGE = /function mergeRequest\(\{ older, newer \}\) \{\s*return (`[^`]*`);/;
+const appUrl = 'https://raw.githubusercontent.com/Diexar-Labs/jotdrop/main/cloud/web/app.js';
+const appAnswer = await fetch(appUrl);
+if (!appAnswer.ok) throw new Error(`Could not fetch ${appUrl}: ${appAnswer.status}`);
+const webMerge = MERGE.exec(await appAnswer.text())?.[1];
+const ownMerge = MERGE.exec(readFileSync(new URL('../src/mergeRequest.mjs', import.meta.url), 'utf8'))?.[1];
+const sameMerge = Boolean(webMerge) && webMerge === ownMerge;
+console.log(`${sameMerge ? 'same   ' : 'DIFFERS'} mergeRequest`);
+if (!sameMerge) {
+  console.error('\nmergeRequest differs from JotDrop main. Copy the new text into src/mergeRequest.mjs.');
   process.exit(1);
 }

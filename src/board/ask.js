@@ -4,6 +4,7 @@ import { KEEP_YEARS, keepUntil } from '../cloud-shared/ai/receipt.mjs';
 import { editorRequest, receiptLines } from '../cloud-shared/ai-web.mjs';
 import { PAPER_DRAWER, validExpires } from '../cloud-shared/paper.mjs';
 import { sizeText } from '../fileChips.mjs';
+import { mergeRequest } from '../mergeRequest.mjs';
 
 // Ask JotDrop on the Joplin board: the question window and its settings. The same flow as the web app and the
 // Obsidian plugin: the list "What goes along" before anything leaves, a new note at once, a change to a note only
@@ -120,13 +121,15 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
   /**
    * Opens the window. note: ask about this card ({ id, title, listLink }); summarize: only that note, fixed request;
    * action: transcribe, photo or receipt, one file of that note with a fixed request, no notes and no tools.
+   * week: "This week", the digest of the week with a fixed request and no tools. merge: "Merge with AI" from Find
+   * duplicates, { older, newer } as { id, title }: only those two notes go, with a fixed request.
    */
-  async function open({ note = null, summarize = false, action = '' } = {}) {
+  async function open({ note = null, summarize = false, action = '', week = false, merge = null } = {}) {
     close();
     let settings;
     try { settings = await post({ type: 'aiSettings' }); } catch { toast('That did not work. Please try again.'); return; }
     if (!note) action = '';
-    const me = { settings, note, summarize, action, excluded: new Map(), token: '', busy: false, goesTimer: 0, last: null, overlay: null, files: [], filesOn: new Set(), drawers: [], drawer: '', request: '' };
+    const me = { settings, note, summarize, action, week, merge, excluded: new Map(), token: '', busy: false, goesTimer: 0, last: null, overlay: null, files: [], filesOn: new Set(), drawers: [], drawer: '', request: '' };
     current = me;
 
     // The note's files as the main process sees them (no bytes), with why one cannot go with this service. A file
@@ -176,7 +179,7 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
       }
       return '';
     };
-    const fixedRequest = () => (summarize && note ? editorRequest('summarize', note.title || 'Untitled') : action ? me.request : '');
+    const fixedRequest = () => (summarize && note ? editorRequest('summarize', note.title || 'Untitled') : week ? 'Overview of my week' : merge ? mergeRequest(merge) : action ? me.request : '');
     const sending = () => me.files.filter((file) => me.filesOn.has(file.id) && !file.problem);
 
     let el = null;
@@ -189,14 +192,20 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
       request.readOnly = Boolean(fixed);
       const goesSummary = h('summary');
       const goesList = h('ul', { class: 'jd-ask-goes-list' });
-      const goesText = action
+      const goesText = week
+        ? 'JotDrop picked these notes on this computer: changed in the last 7 days, a reminder in the next 7 days, or an expiry date within 30 days. Only the title, the first line, the open tasks, the time of the last change, the reminder and the expiry date of each go along, not the whole note. Clear a box to keep a note out.'.replace('this computer', here())
+        : merge
+        ? 'Both notes go along, in full. The AI writes one text for the newer note. Nothing is changed until you select Apply, and the older note goes to the trash only when you choose that.'
+        : action
         ? 'Only the chosen file goes, with the fixed request above. No notes go along, and the AI cannot change anything.'
         : `These notes go along with your question. Clear a note to keep it out. Ask JotDrop looks among the notes with words of your question; while answering, the AI can search and read more of those. You see which ones afterwards.${me.files.length ? ' A file of the note goes only when you tick it.' : ''}`;
       const goesFiles = h('p', { class: 'jd-ask-note', hidden: true, text: `The ticked file goes to the AI service as it is${mobile() ? '' : ', straight from this computer'}. A photo or recording can hold other people's details, so only send what you may share.` });
       const goes = h('details', { class: 'jd-ask-goes' }, goesSummary, h('p', { class: 'jd-ask-note', text: goesText }), goesList, goesFiles);
-      // A file action shows the file at once: the user sends it, or chooses another one first.
-      goes.open = Boolean(action);
+      // A file action, the week and a merge show their list at once: the user checks it first, then sends.
+      goes.open = Boolean(action || week || merge);
       const send = h('button', { type: 'button', class: 'jd-ask-primary', onclick: () => sendRequest() }, 'Send');
+      // "This week" is a fixed request of its own: only on the plain Ask window.
+      const weekButton = !note && !summarize && !action && !week && !merge ? h('button', { type: 'button', onclick: () => open({ week: true }) }, 'This week') : null;
       const stop = h('button', { type: 'button', hidden: true, onclick: () => post({ type: 'aiStop', token: me.token }).catch(() => {}) }, 'Stop');
       const status = h('p', { class: 'jd-ask-status', role: 'status', 'aria-live': 'polite' });
       const confirmTitle = h('h3');
@@ -216,7 +225,7 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
       const result = h('div', { class: 'jd-ask-result', hidden: true }, badge, answer, receipt, sources, actions, also, usage, useButtons, reportBox);
       const offBox = h('div', { class: 'jd-ask-off', hidden: !off }, h('p', { text: off }),
         !me.settings.provider ? h('button', { type: 'button', class: 'jd-ask-primary', onclick: () => toggleSettings(true) }, 'Open settings') : null);
-      const form = h('div', { class: 'jd-ask-form', hidden: Boolean(off) }, request, goes, h('div', { class: 'jd-ask-buttons' }, send, stop));
+      const form = h('div', { class: 'jd-ask-form', hidden: Boolean(off) }, request, goes, h('div', { class: 'jd-ask-buttons' }, send, weekButton, stop));
       request.addEventListener('input', () => { clearTimeout(me.goesTimer); me.goesTimer = setTimeout(renderGoes, 250); });
       request.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendRequest(); } });
       const viaLine = h('p', { class: 'jd-ask-via', text: off ? '' : via(me.settings, action, sending().length > 0) });
@@ -224,9 +233,9 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
       el = { request, goesSummary, goesList, goesFiles, via: viaLine, send, stop, status, confirm, confirmTitle, confirmBody, apply, result, badge, answer, receipt, sources, actions, also, usage, useButtons, reportBox };
       if (off) return;
       renderGoes();
-      // Summarize starts at once; a file action waits for Send, so the user sees which file goes.
-      if (fixed && !action && !me.last && !me.busy) sendRequest();
-      else if (action) send.focus();
+      // Summarize starts at once; a file action, the week and a merge wait for Send, so the user sees what goes.
+      if (fixed && !action && !week && !merge && !me.last && !me.busy) sendRequest();
+      else if (action || week || merge) send.focus();
       else request.focus();
     }
 
@@ -237,8 +246,13 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
     async function renderGoes() {
       const asked = ++goesAsked;
       let picked = [];
-      // A file action sends no notes, so there is nothing to ask about them.
-      if (!action) {
+      // The week asks the main process which notes the digest picks; a merge has its two notes. A file action sends no
+      // notes, so there is nothing to ask about them.
+      if (week) {
+        try { picked = (await post({ type: 'aiWeek', excluded: [...me.excluded.keys()] })).notes; } catch { return; }
+      } else if (merge) {
+        picked = [merge.older, merge.newer].filter((item) => !me.excluded.has(item.id));
+      } else if (!action) {
         try { picked = (await post({ type: 'aiPreview', request: el.request.value, noteId: note?.id || '', mode: summarize ? 'summarize' : 'ask', excluded: [...me.excluded.keys()] })).notes; } catch { /* the list stays as it was */ return; }
       }
       if (asked !== goesAsked || current !== me) return;
@@ -324,7 +338,7 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
       el.status.textContent = `${files.length ? 'Reading the file, then asking' : 'Asking'} ${me.settings.provider === 'custom' ? me.settings.baseUrl : service?.name || 'the AI service'}...`;
       let result = null;
       try {
-        result = await post({ type: 'aiAsk', token: me.token, request, noteId: note?.id || '', mode: summarize ? 'summarize' : 'ask', action, files: files.map((file) => file.id), excluded: [...me.excluded.keys()] });
+        result = await post({ type: 'aiAsk', token: me.token, request, noteId: note?.id || '', mode: week ? 'digest' : merge ? 'merge' : summarize ? 'summarize' : 'ask', older: merge?.older.id || '', newer: merge?.newer.id || '', action, files: files.map((file) => file.id), excluded: [...me.excluded.keys()] });
       } catch (error) {
         if (current === me) el.status.textContent = String(error?.message || 'That did not work. Please try again.');
       }
@@ -348,6 +362,14 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
         el.actions.append(h('li', {}, actionLine(action),
           action.made ? h('button', { type: 'button', class: 'jd-ask-inline', onclick: () => { close(); openCard(action.made); } }, 'Open') : null));
       }
+      // After a merge that was applied, the older note is still there: moving it to the trash is the user's own step.
+      if (merge && result.actions.some((done) => done.tool === 'replace_note_text' && done.status === 'done' && done.id === merge.newer.id)) {
+        const row = h('li', {}, `The older note "${merge.older.title}" is still there. `);
+        row.append(h('button', { type: 'button', class: 'jd-ask-inline', onclick: async () => {
+          try { await post({ type: 'aiTrash', id: merge.older.id }); row.textContent = `Moved "${merge.older.title}" to the trash.`; } catch (error) { el.status.textContent = String(error?.message || error); }
+        } }, 'Move it to the trash'));
+        el.actions.append(row);
+      }
       // In words what went: the question (a recording goes on its own), the notes, and each file by name.
       const went = [...(action === 'transcribe' ? [] : ['your question']), ...(result.first ? [`${result.first} ${result.first === 1 ? 'note' : 'notes'}`] : []),
         ...result.files.map((file) => `the ${FILE_NOUNS[file.kind] || 'file'} "${file.name}"`)];
@@ -366,7 +388,7 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
       }
       const save = h('button', { type: 'button', onclick: async () => {
         const titled = { transcribe: 'Recording in', photo: 'Text from the photo in', receipt: 'Receipt in' }[action] || (summarize ? 'Summary of' : '');
-        const title = titled && note ? `${titled} ${note.title || 'Untitled'}` : request.split('\n')[0].slice(0, 80);
+        const title = merge ? `Merged text of ${merge.newer.title}` : titled && note ? `${titled} ${note.title || 'Untitled'}` : request.split('\n')[0].slice(0, 80);
         try { await post({ type: 'create', title, body: `${result.answer.trim()}\n` }); el.status.textContent = `Saved as the note "${title}".`; save.remove(); } catch (error) { el.status.textContent = String(error?.message || error); }
       } }, 'Save as a new note');
       el.useButtons.append(save, h('button', { type: 'button', onclick: toggleReport }, 'Report'));
@@ -475,7 +497,7 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
         render();
       });
       const parts = [
-        h('p', { text: `Optional and free. Ask JotDrop sends your question, and the notes it shows you first, straight from ${here()} to the AI service you choose, with your own key. JotDrop never sees them. A paid service bills you for what you use. New notes are made at once; a change to a note waits until you apply it.` }),
+        h('p', { text: `Optional and free. Ask JotDrop sends your question, and the notes it shows you first, straight from ${here()} to the AI service you choose, with your own key. JotDrop never sees them. "This week" sends a short digest of your notes, not the notes themselves. A paid service bills you for what you use. New notes are made at once; a change to a note waits until you apply it.` }),
         h('p', { class: 'jd-ask-note', text: keyNote() }),
         field('AI service', select, draft.provider ? providerNote(draft.provider) : 'Ask JotDrop is off. Choose an AI service to turn it on.'),
       ];
