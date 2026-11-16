@@ -198,7 +198,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-ask textarea, .jd-ask input[type="text"], .jd-ask input[type="password"], .jd-ask select { box-sizing: border-box; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .jd-ask-request { display: block; width: 100%; margin-top: 10px; resize: vertical; }
 .jd-ask-row input[type="text"] { flex: 1 1 200px; }
-.jd-ask-row select { flex: 1 1 100%; }
+.jd-ask-row input[type="search"], .jd-ask-row select { flex: 1 1 100%; }
 .jd-ask-via { margin: 8px 0 0; color: var(--muted); font-size: .85rem; }
 .jd-ask-note { margin: 6px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.35; }
 .jd-ask-goes { margin-top: 10px; }
