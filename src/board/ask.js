@@ -497,12 +497,22 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
         const load = h('button', { type: 'button', onclick: () => loadModels(load) }, 'Test and load models');
         const row = h('div', { class: 'jd-ask-row' }, model, load);
         if (models) {
-          const list = h('select', { 'aria-label': 'Models of this service' }, h('option', { value: '', text: `Choose one of ${models.count} models` }),
-            models.groups.map((group) => h('optgroup', { label: group.label === 'Cannot use tools' ? 'Cannot use tools: answers only, no changes' : group.label },
-              group.models.map((m) => h('option', { value: m.id, text: m.name === m.id ? m.id : `${m.name} (${m.id})` })))));
-          list.value = models.groups.some((group) => group.models.some((m) => m.id === draft.model)) ? draft.model : '';
+          const search = h('input', { type: 'search', placeholder: 'Search: claude, gpt, qwen', 'aria-label': 'Search the models', autocomplete: 'off', spellcheck: 'false' });
+          const list = h('select', { 'aria-label': 'Models of this service' });
+          // The search words must all occur in the name or the id; the groups stay, with only the matching models in them.
+          const fill = () => {
+            const words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+            const groups = models.groups.map((group) => ({ label: group.label, models: group.models.filter((m) => words.every((word) => `${m.name} ${m.id}`.toLowerCase().includes(word))) })).filter((group) => group.models.length);
+            const found = new Set(groups.flatMap((group) => group.models.map((m) => m.id))).size;
+            list.replaceChildren(h('option', { value: '', text: words.length ? `${found} of ${models.count} models match` : `Choose one of ${models.count} models` }),
+              ...groups.map((group) => h('optgroup', { label: group.label === 'Cannot use tools' ? 'Cannot use tools: answers only, no changes' : group.label },
+                group.models.map((m) => h('option', { value: m.id, text: m.name === m.id ? m.id : `${m.name} (${m.id})` })))));
+            list.value = groups.some((group) => group.models.some((m) => m.id === draft.model)) ? draft.model : '';
+          };
+          fill();
+          search.addEventListener('input', fill);
           list.addEventListener('change', () => { if (list.value) { draft.model = list.value; render(); } });
-          row.append(list);
+          row.append(search, list);
         }
         parts.push(field('Model', row, service.defaultModel ? `Empty means the default, ${service.defaultModel}.` : 'Load the models and choose one that can use tools.'));
         // Joplin for Android has no JotDrop Cloud, so the plugin cannot tell which notes have a live list link: no
