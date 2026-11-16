@@ -1,5 +1,6 @@
 // plainPreviewText, stripInlineMarks, noteUrls, urlKey and urlHost are copied unchanged from
 // JotDrop cloud/web/note.mjs (b59c35e). In a real build they would be imported from there.
+import { blocks, cellText, parseTable } from '../cloud-shared/format.mjs';
 
 /** Plain card text, as the plugin shows it: no emphasis, code, quote, rule, table or escape marks. */
 export function plainPreviewText(text) {
@@ -76,6 +77,11 @@ export function urlHost(url) {
  */
 const TASK_LINE = /^\s*[-*+] \[[ xX]\] /m;
 
+/** A line or table cell as the card shows it: no images, link targets, heading signs or other Markdown marks. */
+export function cellPlain(text) {
+  return plainPreviewText(text.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<img\b[^>]*>/gi, '').replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
+}
+
 export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   const out = [];
   const lines = body.split(/\r?\n/);
@@ -85,6 +91,8 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   let started = false;
   let tasks = 0;
   const limit = TASK_LINE.test(body) ? Infinity : max;
+  // A table is one card row: a small real table (JotDrop design opmaak-editor, part 9).
+  const tables = new Map(blocks(body).filter((run) => run.kind === 'table').map((run) => [run.fromLine, run.toLine]));
   for (let i = 0; i < lines.length && out.length < limit; i++) {
     if (i <= frontmatterEnd) continue;
     const line = lines[i];
@@ -93,6 +101,14 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
       started = true;
       const heading = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line);
       if (heading && plainTitle && plainTitle.includes(normalizeHeading(heading[1]))) continue;
+    }
+    const tableEnd = !fence ? tables.get(i) : undefined;
+    if (tableEnd !== undefined) {
+      const table = parseTable(lines.slice(i, tableEnd + 1));
+      // Its text is the table in words, as the card showed it before: cells joined with " · ".
+      out.push({ table, text: [table.header, ...table.rows].map((cells) => cells.map((cell) => cellPlain(cellText(cell)).trim()).filter(Boolean).join(' · ')).join('\n') });
+      i = tableEnd;
+      continue;
     }
     const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (marker) { if (!fence) fence = marker; else if (marker[0] === fence[0] && marker.length >= fence.length) fence = ''; continue; }
@@ -105,7 +121,7 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
     if (!line.trim()) { if (out.length && out[out.length - 1].text !== '') out.push({ text: '' }); continue; }
     const cleaned = line.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<img\b[^>]*>/gi, '');
     if (!cleaned.trim()) continue;
-    const text = plainPreviewText(cleaned.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
+    const text = cellPlain(cleaned);
     if (text.trim()) out.push({ text });
   }
   while (out.length && out[out.length - 1].text === '' && out[out.length - 1].line === undefined) out.pop();
