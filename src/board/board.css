@@ -66,6 +66,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .note-card h3 { margin: 0 0 6px; padding-right: 26px; font-family: var(--heading); font-size: 1.04rem; font-weight: 700; letter-spacing: -.01em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .note-preview { overflow: hidden; font-size: .93rem; }
 .jd-line { white-space: pre-wrap; min-height: 1.2em; }
+/* A table on a card (JotDrop design opmaak-editor, part 9): 3 columns, the header and 3 rows, the rest in words. */
+.jd-card-table { flex: none; min-width: 0; margin: 2px 0; }
+.jd-card-table table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .9em; }
+.jd-card-table th, .jd-card-table td { padding: 2px 4px; text-align: left; vertical-align: top; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); }
+.jd-card-table th { font-weight: 700; border-bottom: 1.5px solid currentColor; }
+.jd-card-table tbody tr:nth-child(even) > * { background: color-mix(in srgb, currentColor 6%, transparent); }
+.jd-card-table .jd-align-center { text-align: center; }
+.jd-card-table .jd-align-right { text-align: right; }
+.jd-table-more { margin: 2px 0 0; color: var(--muted); font-size: .85em; }
 .jd-task { display: flex; align-items: flex-start; gap: 4px; }
 .jd-task > span { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .compact-preview-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; margin-top: 6px; }

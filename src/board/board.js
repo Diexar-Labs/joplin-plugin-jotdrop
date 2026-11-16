@@ -1,5 +1,6 @@
-import { noteUrls, previewLines, urlHost } from './note.js';
+import { cellPlain, noteUrls, previewLines, urlHost } from './note.js';
 import { cardPreview, checklistOnly, tagOnly } from './card-preview.js';
+import { cardTable } from '../cloud-shared/format-dom.mjs';
 import { planMove, sortCards } from './order.js';
 import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
 import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
@@ -11,6 +12,7 @@ const PAGE = 60;
 const COLOR_KEYS = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray'];
 const STRINGS = {
   en: {
+    tableMore: (columns, rows) => [columns ? `+ ${columns} ${columns === 1 ? 'column' : 'columns'}` : '', rows ? `+ ${rows} ${rows === 1 ? 'row' : 'rows'}` : ''].filter(Boolean).join(' · '),
     checkedItems: (n) => `+ ${n} checked ${n === 1 ? 'item' : 'items'}`, openNote: (n) => n ? `Open note - ${n} more ${n === 1 ? 'task' : 'tasks'}` : 'Open note',
     search: 'Search your notes', allNotebooks: 'All notebooks', allTags: 'All', takeNote: 'Take a note…', title: 'Title',
     close: 'Close', savesTo: 'Saves to', pinned: 'Pinned', others: 'Others', pin: 'Pin', unpin: 'Unpin', color: 'Color',
@@ -43,6 +45,7 @@ const STRINGS = {
     transcribe: 'Transcribe with AI', readPhoto: 'Read photo with AI', receipt: 'Receipt to Paper drawer…',
   },
   nl: {
+    tableMore: (columns, rows) => [columns ? `+ ${columns} ${columns === 1 ? 'kolom' : 'kolommen'}` : '', rows ? `+ ${rows} ${rows === 1 ? 'rij' : 'rijen'}` : ''].filter(Boolean).join(' · '),
     checkedItems: (n) => `+ ${n} ${n === 1 ? 'afgevinkt item' : 'afgevinkte items'}`, openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
     search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
     close: 'Sluiten', savesTo: 'Komt in', pinned: 'Vastgezet', others: 'Overige', pin: 'Vastzetten', unpin: 'Losmaken', color: 'Kleur',
@@ -736,12 +739,14 @@ function cardEl(c) {
     const preview = h('div', { class: 'note-preview' });
     card.append(preview);
     // Like Keep: only a note of nothing but tasks is a checklist card; elsewhere a task reads as ☐/☑ text.
-    const isTask = (line) => line.line !== undefined, isMeta = (line) => !line.text.trim() || tagOnly(line.text);
+    const isTask = (line) => line.line !== undefined, isMeta = (line) => !line.table && (!line.text.trim() || tagOnly(line.text));
     const asText = !checklistOnly(lines, isTask, isMeta);
     cardPreviews.set(c.id, cardPreview(preview, lines, {
       isTask, isMeta, isChecked: (line) => line.checked,
       lingering: (line) => justTicked?.id === c.id && justTicked.line === line.line ? Math.max(0, TICK_SHOWN_MS - (performance.now() - justTicked.at)) : 0,
-      render: (line) => !isTask(line) ? h('div', { class: 'jd-line', text: line.text || ' ' })
+      atomic: (line) => Boolean(line.table),
+      render: (line) => line.table ? cardTable(document, line.table, { plain: cellPlain, more: t.tableMore })
+        : !isTask(line) ? h('div', { class: 'jd-line', text: line.text || ' ' })
         : asText ? h('div', { class: 'jd-line', text: `${line.checked ? '☑' : '☐'} ${line.text}` }) : task(c, line),
       height: () => window.innerHeight,
       openLabel: t.openNote, checkedLabel: t.checkedItems, open: () => openCard(c.id),

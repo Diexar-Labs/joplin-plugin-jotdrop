@@ -54,3 +54,20 @@ test('a checklist saved with Windows line endings (CRLF) still shows its tasks, 
   ]);
   assert.deepEqual(texts(previewLines('Eerste\r\n\r\nTweede\r\n', 'T')), ['Eerste', '', 'Tweede']);
 });
+
+test('a table is one card row with its cells, never a checklist line', () => {
+  const body = 'Prices\n\n| Item | **Price** | Shop | Day |\n|:--|--:|---|---|\n| Tea | 3 | [Bar](https://x.example) | Mon |\n| Milk \\| oat | 2 |\n\n- [ ] pay';
+  const lines = previewLines(body, 'Shopping', Infinity, Infinity);
+  const table = lines.find((line) => line.table);
+  assert.deepEqual(table.table.header, ['Item', '**Price**', 'Shop', 'Day']);
+  assert.deepEqual(table.table.align, ['left', 'right', '', '']);
+  assert.equal(table.table.rows.length, 2);
+  assert.equal(table.text, 'Item · Price · Shop · Day\nTea · 3 · Bar · Mon\nMilk | oat · 2');
+  assert.equal(table.line, undefined);
+  assert.deepEqual(lines.map((line) => (line.table ? 'table' : line.text)), ['Prices', '', 'table', '', 'pay']);
+});
+
+test('a table in a code block stays code', () => {
+  const lines = previewLines('```\n| a | b |\n|---|---|\n```', '', Infinity, Infinity);
+  assert.equal(lines.some((line) => line.table), false);
+});

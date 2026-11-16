@@ -18,6 +18,8 @@ def main():
     # Attached files other than photos and sounds: up to three chips with name and size, then "+ N files".
     bodies["files"] = "Quote for the roof"
     bodies["onefile"] = ""
+    # A Markdown table is a small real table: 3 columns, the header and 3 rows, the rest in words; never a checklist.
+    bodies["table"] = "Prices\n\n| Item | Price | Shop | Day | Note |\n|:--|--:|:-:|---|---|\n| **Tea** | 3 | [Bar](https://x.example) | Mon | a |\n| Milk \\| oat | 2 |\n| Jam | 4 | Shop | Tue | b |\n| Rice | 1 | Shop | Wed | c |\n\n- [ ] pay"
     pdf = {"id": "f" * 32, "name": "Offer for the new roof with a very long file name.pdf", "kind": "pdf", "size": 2 * 1048576 + 5}
     files = {"files": [pdf, {"id": "1" * 32, "name": "budget.xlsx", "kind": "file", "size": 3000}, {"id": "2" * 32, "name": "walk.mp4", "kind": "video", "size": 0},
                        {"id": "3" * 32, "name": "a.zip", "kind": "file", "size": 1}, {"id": "4" * 32, "name": "b.txt", "kind": "file", "size": 1}],
@@ -115,6 +117,16 @@ def main():
         assert not page.evaluate("n => messages.slice(n).some(m=>m.type==='open')", before)
         page.locator('[data-id="files"] .file-more').click()
         page.wait_for_function("n => messages.slice(n).some(m=>m.type==='open'&&m.id==='files')", arg=before)
+        table = page.locator('[data-id="table"]')
+        assert state(table)["mode"] == "text" and table.get_by_role("checkbox").count() == 0, state(table)
+        assert table.locator(".jd-card-table thead th").all_text_contents() == ["Item", "Price", "Shop"]
+        assert table.locator(".jd-card-table tbody tr").count() == 3
+        assert table.locator(".jd-card-table tbody tr").nth(0).locator("td").all_text_contents() == ["Tea", "3", "Bar"]
+        assert table.locator(".jd-card-table tbody tr").nth(1).locator("td").all_text_contents() == ["Milk | oat", "2", ""]
+        assert table.locator(".jd-card-table thead th").nth(1).get_attribute("class") == "jd-align-right"
+        assert table.locator(".jd-table-more").text_content() == "+ 2 columns · + 1 row"
+        fit = table.locator(".jd-card-table").evaluate("el=>({box:el.clientWidth,scroll:el.scrollWidth})")
+        assert fit["scroll"] <= fit["box"] + 1, fit
         one = page.locator('[data-id="onefile"]')
         assert one.locator(".file-chip").count() == 1 and one.locator(".file-more").count() == 0 and one.locator(".jd-muted").count() == 0
         shots = Path(tempfile.gettempdir()) / "kilo" / "compact-card-checks"
@@ -139,7 +151,7 @@ def main():
             if width == 390:
                 page.screenshot(path=str(shots / "joplin-mobile.png"), full_page=True)
         assert not errors, errors
-        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed = text, tag line, article, file chips, resize and large text PASS")
+        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed = text, tag line, article, file chips, table, resize and large text PASS")
         browser.close()
 
 
