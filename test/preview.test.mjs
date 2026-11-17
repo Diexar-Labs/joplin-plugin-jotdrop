@@ -9,7 +9,7 @@ test('a first heading that repeats the title is not shown twice', () => {
 });
 
 test('a first heading that is not the title stays', () => {
-  assert.deepEqual(texts(previewLines('## Ingrediënten\n- bloem', 'Pannenkoeken')), ['Ingrediënten', '- bloem']);
+  assert.deepEqual(texts(previewLines('## Ingrediënten\n- bloem', 'Pannenkoeken')), ['Ingrediënten', '• bloem']);
 });
 
 test('compact cards cap tasks without changing their source lines or the note', () => {
@@ -28,12 +28,20 @@ test('compact cards cap tasks without changing their source lines or the note', 
 test('YAML, quoted tasks and fenced code never become clickable preview tasks', () => {
   const body = '---\n- [ ] yaml\n---\n# Title\n```\n- [ ] code\n```\n> - [ ] quoted\n- [ ] real';
   const tasks = previewLines(body, 'Title', Infinity, Infinity).filter(line => line.line !== undefined);
-  assert.deepEqual(tasks, [{line: 8, checked: false, text: 'real'}]);
+  assert.deepEqual(tasks, [{line: 8, checked: false, text: 'real', level: 0}]);
 });
 
 test('checklist lines keep the index of their line in the note', () => {
   const tasks = previewLines('Intro\n\n- [x] A\n- [ ] B', 'T').filter((line) => line.line !== undefined);
   assert.deepEqual(tasks.map((line) => [line.line, line.checked, line.text]), [[2, true, 'A'], [3, false, 'B']]);
+});
+
+test('lists in levels: bullets show as •, numbers keep their number, the card shows 3 levels', () => {
+  const body = 'Intro\n- [ ] top\n\t- [x] sub\n\t\t- [ ] deep\n\t\t\t- [ ] deeper\n* bullet\n    2) second\n> - quoted';
+  const lines = previewLines(body, 'T', Infinity, Infinity);
+  assert.deepEqual(lines.map((line) => [line.text, line.level, line.line]), [
+    ['Intro', undefined, undefined], ['top', 0, 1], ['sub', 1, 2], ['deep', 2, 3], ['deeper', 2, 4], ['• bullet', 0, undefined], ['2) second', 1, undefined], ['- quoted', undefined, undefined],
+  ]);
 });
 
 test('image-only lines are left out of the text', () => {
@@ -48,9 +56,9 @@ test('a checklist saved with Windows line endings (CRLF) still shows its tasks, 
   const body = ['- [ ] Een', '- [x] Twee', '- [ ] Drie'].join('\r\n');
   const lines = previewLines(body, 'List');
   assert.deepEqual(lines, [
-    { line: 0, checked: false, text: 'Een' },
-    { line: 1, checked: true, text: 'Twee' },
-    { line: 2, checked: false, text: 'Drie' },
+    { line: 0, checked: false, text: 'Een', level: 0 },
+    { line: 1, checked: true, text: 'Twee', level: 0 },
+    { line: 2, checked: false, text: 'Drie', level: 0 },
   ]);
   assert.deepEqual(texts(previewLines('Eerste\r\n\r\nTweede\r\n', 'T')), ['Eerste', '', 'Tweede']);
 });

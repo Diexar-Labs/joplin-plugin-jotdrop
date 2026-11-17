@@ -15,6 +15,8 @@ def main():
     bodies["mixed"] = "Some tips first.\n\n- [ ] MA\n- [x] MB"
     bodies["tagged"] = "- [ ] milk\n- [ ] bread\n\n#groceries"
     bodies["article"] = "Long article sentence. " * 300 + "\n- [ ] A\n- [x] B\n- [ ] C"
+    bodies["levels"] = "Intro\n- [ ] top\n\t- [ ] sub\n\t\t- [ ] deep\n\t\t\t- [ ] deeper\n- bullet"
+    bodies["moving"] = "Before:\n- [ ] one\n- [ ] two\n- [x] done"
     # Attached files other than photos and sounds: up to three chips with name and size, then "+ N files".
     bodies["files"] = "Quote for the roof"
     bodies["onefile"] = ""
@@ -38,9 +40,16 @@ def main():
           if (m.type === 'toggleTask') {
             const lines = bodies[m.id].split('\\n');
             lines[m.line] = lines[m.line].replace(/\\[[ xX]\\]/, m.checked ? '[x]' : '[ ]');
+            let line = m.line;
+            // With "Move checked items to the bottom" on, a ticked task goes under the last open one (flat lists only here).
+            if (window.moveChecked && m.checked) {
+              let last = -1;
+              lines.forEach((text, i) => { if (i > m.line && /^- \\[ \\] /.test(text)) last = i; });
+              if (last > m.line) { lines.splice(last, 0, ...lines.splice(m.line, 1)); line = last; }
+            }
             bodies[m.id] = lines.join('\\n');
             const c = data.cards.find(c=>c.id===m.id); c.updated++;
-            return {...c, preview:preview(c.id)};
+            return {card: {...c, preview:preview(c.id)}, line};
           }
           return {};
         }
@@ -88,16 +97,38 @@ def main():
         checked = page.locator('[data-id="checked"]')
         assert state(checked) == {"mode": "checklist", "visible-tasks": "8", "hidden-tasks": "0", "checked-tasks": "7"}, state(checked)
         assert checked.get_by_role("checkbox", checked=True).count() == 0
-        # Any other text makes it a text card (like Joplin's welcome note "4. Tips"): tasks as ☐/☑ text.
+        # Tasks and other text make a mixed card (JotDrop design kaarten-en-lijsten, part 5; like Joplin's welcome
+        # note "4. Tips"): the note's own order, real boxes, a ticked task struck through in its place.
         mixed = page.locator('[data-id="mixed"]')
-        assert state(mixed)["mode"] == "text" and mixed.get_by_role("checkbox").count() == 0, state(mixed)
-        mixed_text = mixed.locator(".note-preview").text_content()
-        assert "☐ MA" in mixed_text and "☑ MB" in mixed_text, mixed_text
+        assert state(mixed) == {"mode": "mixed", "visible-tasks": "2", "hidden-tasks": "0", "checked-tasks": "0"}, state(mixed)
+        assert mixed.get_by_role("checkbox").count() == 2 and mixed.get_by_role("checkbox", name="MB").get_attribute("aria-checked") == "true"
+        assert "☐" not in mixed.locator(".note-preview").text_content().replace(mixed.get_by_role("checkbox", name="MA").text_content(), "", 1)
+        # Levels: 3 on the card, deeper items stay on the third; a bullet shows as •.
+        levels = page.locator('[data-id="levels"]')
+        classes = levels.locator(".note-preview > *").evaluate_all("els=>els.map(el=>[...el.classList].filter(c=>c.startsWith('jd-level-')).join(''))")
+        assert classes == ["", "", "jd-level-1", "jd-level-2", "jd-level-2", ""], classes
+        assert levels.locator(".note-preview > *").nth(5).text_content() == "• bullet"
+        # "Move checked items to the bottom": the task is struck through in its own place first, then the card shows
+        # the new order; the line the plugin reports is the one the stroke follows.
+        page.evaluate("window.moveChecked = true")
+        moving = page.locator('[data-id="moving"]')
+        rows = lambda: moving.locator(".note-preview > *").evaluate_all("els=>els.map(el=>el.textContent.replace(/[☐☑]/,'').trim())")
+        moving.get_by_role("checkbox", name="one", exact=True).click()
+        page.wait_for_function("id => messages.some(m=>m.type==='toggleTask'&&m.id===id&&m.line===1&&m.checked)", arg="moving")
+        page.wait_for_timeout(100)
+        assert rows() == ["Before:", "one", "two", "done"], rows()
+        assert "is-done" in moving.locator(".jd-task").first.get_attribute("class")
+        page.wait_for_timeout(600)
+        assert rows() == ["Before:", "two", "one", "done"], rows()
+        assert page.evaluate("bodies.moving") == "Before:\n- [ ] two\n- [x] one\n- [x] done"
+        page.evaluate("window.moveChecked = false")
         tagged = page.locator('[data-id="tagged"]')
         assert state(tagged)["mode"] == "checklist" and tagged.get_by_role("checkbox").count() == 2, state(tagged)
         article = page.locator('[data-id="article"]')
-        assert state(article)["mode"] == "text" and article.get_by_role("checkbox").count() == 0
-        assert article.locator('[data-preview-action="open"]').text_content() == "Open note"
+        # mrjo118's case: the text keeps the text card's room and the card says how many tasks are behind "Open note".
+        assert state(article) == {"mode": "mixed", "visible-tasks": "0", "hidden-tasks": "3", "checked-tasks": "0"}, state(article)
+        assert article.get_by_role("checkbox").count() == 0
+        assert article.locator('[data-preview-action="open"]').text_content() == "Open note - 3 more tasks"
         intro = article.locator(".note-preview").text_content()
         assert intro.startswith("Long article sentence.") and intro.endswith("…"), intro[-60:]
         chips = page.locator('[data-id="files"] .file-chip')
@@ -118,7 +149,7 @@ def main():
         page.locator('[data-id="files"] .file-more').click()
         page.wait_for_function("n => messages.slice(n).some(m=>m.type==='open'&&m.id==='files')", arg=before)
         table = page.locator('[data-id="table"]')
-        assert state(table)["mode"] == "text" and table.get_by_role("checkbox").count() == 0, state(table)
+        assert state(table)["mode"] == "mixed" and table.get_by_role("checkbox", name="pay").count() == 1, state(table)
         assert table.locator(".jd-card-table thead th").all_text_contents() == ["Item", "Price", "Shop"]
         assert table.locator(".jd-card-table tbody tr").count() == 3
         assert table.locator(".jd-card-table tbody tr").nth(0).locator("td").all_text_contents() == ["Tea", "3", "Bar"]
@@ -151,7 +182,7 @@ def main():
             if width == 390:
                 page.screenshot(path=str(shots / "joplin-mobile.png"), full_page=True)
         assert not errors, errors
-        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed = text, tag line, article, file chips, table, resize and large text PASS")
+        print("Joplin synthetic board (Keep model): 0/1/5/10/11/12/100, source line 10 then folded, checked folded, mixed with boxes, levels, move checked, tag line, article, file chips, table, resize and large text PASS")
         browser.close()
 
 

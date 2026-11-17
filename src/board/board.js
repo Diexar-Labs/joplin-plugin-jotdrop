@@ -1,5 +1,5 @@
 import { cellPlain, noteUrls, previewLines, urlHost } from './note.js';
-import { cardPreview, checklistOnly, tagOnly } from './card-preview.js';
+import { cardPreview, tagOnly } from './card-preview.js';
 import { cardTable } from '../cloud-shared/format-dom.mjs';
 import { planMove, sortCards } from './order.js';
 import { drawingFileName, read as readDrawing } from '../cloud-shared/drawing.mjs';
@@ -738,16 +738,16 @@ function cardEl(c) {
   if (lines.length) {
     const preview = h('div', { class: 'note-preview' });
     card.append(preview);
-    // Like Keep: only a note of nothing but tasks is a checklist card; elsewhere a task reads as ☐/☑ text.
+    // Only tasks: a checklist card. Tasks and other text: a mixed card, its tasks with real boxes too, in the note's
+    // own order (JotDrop design kaarten-en-lijsten, part 5).
     const isTask = (line) => line.line !== undefined, isMeta = (line) => !line.table && (!line.text.trim() || tagOnly(line.text));
-    const asText = !checklistOnly(lines, isTask, isMeta);
     cardPreviews.set(c.id, cardPreview(preview, lines, {
-      isTask, isMeta, isChecked: (line) => line.checked,
+      isTask, isMeta, isChecked: (line) => line.checked, level: (line) => line.level || 0,
       lingering: (line) => justTicked?.id === c.id && justTicked.line === line.line ? Math.max(0, TICK_SHOWN_MS - (performance.now() - justTicked.at)) : 0,
       atomic: (line) => Boolean(line.table),
       render: (line) => line.table ? cardTable(document, line.table, { plain: cellPlain, more: t.tableMore })
-        : !isTask(line) ? h('div', { class: 'jd-line', text: line.text || ' ' })
-        : asText ? h('div', { class: 'jd-line', text: `${line.checked ? '☑' : '☐'} ${line.text}` }) : task(c, line),
+        : !isTask(line) ? h('div', { class: `jd-line${line.level ? ` jd-level-${line.level}` : ''}`, text: line.text || ' ' })
+        : task(c, line),
       height: () => window.innerHeight,
       openLabel: t.openNote, checkedLabel: t.checkedItems, open: () => openCard(c.id),
     }));
@@ -801,14 +801,35 @@ function tiltFor(id) {
 
 function task(c, line) {
   // ☐/☑ are shapes, not colours, so the state is clear without colour vision.
-  return h('div', { class: `jd-task${line.checked ? ' is-done' : ''}` },
+  const row = h('div', { class: `jd-task${line.checked ? ' is-done' : ''}${line.level ? ` jd-level-${line.level}` : ''}` },
     h('button', { type: 'button', class: 'jd-check', role: 'checkbox', 'aria-checked': String(line.checked), 'aria-label': line.text,
       text: line.checked ? '☑' : '☐', onclick: (e) => {
         e.stopPropagation();
-        justTicked = line.checked ? undefined : { id: c.id, line: line.line, at: performance.now() };
-        update({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked, expectedUpdated: c.updated });
+        tick(c, line, row);
       } }),
     h('span', { text: line.text, 'data-preview-task-text': '' }));
+  return row;
+}
+
+// With "Move checked items to the bottom" a ticked task moves in the note (JotDrop design kaarten-en-lijsten, part 6).
+// It is struck through in its own place first; then the card shows the new order. Until then the card keeps its old
+// edit time, so another tap on it meanwhile is refused instead of hitting the wrong line.
+async function tick(c, line, row) {
+  const at = performance.now();
+  justTicked = line.checked ? undefined : { id: c.id, line: line.line, at };
+  try {
+    const answer = await post({ type: 'toggleTask', id: c.id, line: line.line, checked: !line.checked, expectedUpdated: c.updated });
+    if (answer.line === line.line || line.checked) { replaceCard(answer.card); return; }
+    justTicked = { id: c.id, line: answer.line, at };
+    row.classList.add('is-done');
+    const box = row.querySelector('.jd-check');
+    box.textContent = '☑';
+    box.setAttribute('aria-checked', 'true');
+    setTimeout(() => replaceCard(answer.card), Math.max(0, TICK_SHOWN_MS - (performance.now() - at)));
+  } catch (error) {
+    toast(String(error && error.message).includes('changed') ? t.changed : t.failed);
+    await load();
+  }
 }
 
 // Like the website, Obsidian and Android: up to three files as chips with name and size, the rest as "+ N files".

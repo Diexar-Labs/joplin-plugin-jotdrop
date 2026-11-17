@@ -83,6 +83,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .compact-preview-controls button:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 .jd-check { flex: none; width: 26px; height: 26px; margin: -3px 0 -3px -5px; padding: 0; border: 0; background: transparent; font-size: 1.15rem; line-height: 1; cursor: pointer; }
 .jd-task.is-done span { text-decoration: line-through; color: var(--muted); }
+/* Lists in levels on the cards (JotDrop design kaarten-en-lijsten, part 7): 3 levels. */
+.note-preview .jd-level-1 { margin-left: 1.25em; }
+.note-preview .jd-level-2 { margin-left: 2.5em; }
 .jd-muted { margin: 0; color: var(--muted); font-style: italic; }
 .card-reminder { display: inline-block; margin: 8px 0 0; padding: 1px 9px; border: 1px solid var(--line); border-radius: 999px; font-size: .75rem; font-weight: 500; }
 .card-reminder.is-overdue { border-style: dashed; border-color: currentColor; font-weight: 700; }
