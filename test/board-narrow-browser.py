@@ -36,9 +36,9 @@ def main():
             assert file.is_relative_to(ROOT)
             route.fulfill(path=str(file), content_type=(mimetypes.guess_type(str(file))[0] or "application/octet-stream") + "; charset=utf-8")
 
-    def open_board(browser, width, platform, locale="en", count=54):
+    def open_board(browser, width, platform, locale="en", count=54, height=800):
         data = {"locale": locale, "platform": platform, "cards": cards[:count], "folders": [{"id": "f", "title": "Synthetic"}], "boardFolder": "f", "drawers": [], "scroll": None}
-        context = browser.new_context(viewport={"width": width, "height": 800}, has_touch=width < 600)
+        context = browser.new_context(viewport={"width": width, "height": height}, has_touch=width < 600 or height < 600)
         page = context.new_page()
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -65,14 +65,52 @@ def main():
         # The note box is one low line until it is tapped.
         assert not phone.locator(".jd-c-title").is_visible()
         assert box(phone, ".jd-compose")["height"] < 46, box(phone, ".jd-compose")
-        # The tool chips are chips: no wider than their words, no drawing-window shadow.
-        for chip in [phone.locator(".jd-filters button", has_text="Drawing"), phone.locator(".jd-filters button", has_text="Ask JotDrop")]:
-            size = chip.bounding_box()
-            assert size["width"] < 170 and size["height"] < 40, size
-            assert chip.evaluate("el => getComputedStyle(el).boxShadow") == "none"
-        # The first card starts in the top 40% of an 800 px screen (it was ~49%).
+        # One top row: search, notebooks and the "More" button; Archive, Drawing, Ask JotDrop and the Paper drawer are in its menu.
+        for hidden in ["Drawing", "Ask JotDrop", "Archive", "Paper drawer"]:
+            assert not phone.locator(".jd-filters button, .jd-tags button", has_text=hidden).first.is_visible(), hidden
+        tools = phone.locator(".jd-tools-btn")
+        assert tools.is_visible() and tools.get_attribute("aria-label") == "More" and tools.get_attribute("aria-haspopup") == "menu"
+        rows = [box(phone, selector)["y"] for selector in [".jd-search", ".jd-folder", ".jd-tools-btn"]]
+        assert max(rows) - min(rows) < 12, f"search, notebooks and More should share a row: {rows}"
+        assert tools.bounding_box()["width"] >= 36 and tools.bounding_box()["height"] >= 30, tools.bounding_box()
+        assert phone.locator(".jd-tags").evaluate("el => el.children.length === 0 && getComputedStyle(el).display") == "none", "an empty tag row takes no room, not even its margin"
+        # The menu: four items, none switched on, Esc closes it.
+        tools.tap()
+        menu = phone.locator(".menu-tools")
+        menu.wait_for()
+        names = [text.strip() for text in menu.locator("button").all_inner_texts()]
+        assert names == ["Archive", "Drawing", "Ask JotDrop", "Paper drawer"], names
+        assert [b.get_attribute("aria-checked") for b in menu.locator("button").all()] == ["false", None, None, "false"]
+        phone.keyboard.press("Escape")
+        menu.wait_for(state="detached")
+        # Archive on: the item says so, and the Archive chip shows up with its ✓ so the state is not only in the menu.
+        tools.tap()
+        phone.locator(".menu-tools button", has_text="Archive").tap()
+        phone.locator(".jd-archive").wait_for(state="visible")
+        assert phone.locator(".jd-archive").inner_text().startswith("✓"), phone.locator(".jd-archive").inner_text()
+        tools.tap()
+        assert phone.locator(".menu-tools button", has_text="Archive").get_attribute("aria-checked") == "true"
+        assert "✓" in phone.locator(".menu-tools button", has_text="Archive").inner_text()
+        phone.locator(".menu-tools button", has_text="Archive").tap()
+        phone.locator(".jd-archive").wait_for(state="hidden")
+        # The Paper drawer on: its chips take the place of the menu item in the tag row (✓ on the first, and a "New drawer" chip).
+        tools.tap()
+        phone.locator(".menu-tools button", has_text="Paper drawer").tap()
+        phone.locator(".jd-paper-chip").first.wait_for(state="visible")
+        assert phone.locator(".jd-paper-chip").first.inner_text().startswith("✓")
+        assert phone.locator(".jd-tags button", has_text="New drawer").is_visible()
+        tools.tap()
+        assert phone.locator(".menu-tools button", has_text="Paper drawer").get_attribute("aria-checked") == "true"
+        phone.locator(".menu-tools button", has_text="Paper drawer").tap()
+        phone.locator(".jd-paper-chip").first.wait_for(state="detached")
+        # Drawing and Ask JotDrop from the menu open their windows.
+        tools.tap()
+        phone.locator(".menu-tools button", has_text="Drawing").tap()
+        phone.locator(".jd-draw-overlay").wait_for()
+        phone.locator(".jd-draw-overlay").evaluate("el => el.remove()")
+        # The first card starts in the top 20% of an 800 px screen (it was ~49%, then ~31%, now one row of tools: ~13%).
         first = box(phone, ".note-card")["y"]
-        assert first < 0.4 * 800, first
+        assert first < 0.2 * 800, first
         # Tapping the box opens the title and the save bar; Close puts it back.
         phone.locator(".jd-c-body").tap()
         phone.locator(".jd-c-title").wait_for(state="visible")
@@ -93,13 +131,34 @@ def main():
         assert empty.locator(".jd-search").get_attribute("placeholder") == "Search your notes"
         empty.context.close()
 
+        # A phone on its side is wider than 600 px but low (about 360 px): the same "More" button, and the word, the count,
+        # the search box, the notebooks and "More" all on one line (forum 51337: it was three rows next to the title).
+        side = open_board(browser, 800, "mobile", height=360)
+        assert side.locator(".jd-brand").is_visible()
+        assert side.locator(".jd-tools-btn").is_visible()
+        for hidden in ["Drawing", "Ask JotDrop", "Archive", "Paper drawer"]:
+            assert not side.locator(".jd-filters button, .jd-tags button", has_text=hidden).first.is_visible(), hidden
+        centres = [(lambda b: b["y"] + b["height"] / 2)(box(side, selector)) for selector in [".jd-word", ".jd-search", ".jd-folder", ".jd-tools-btn"]]
+        assert max(centres) - min(centres) < 10, f"one row, centred: {centres}"
+        side.context.close()
+
         # A wide window keeps the word, the count next to it and the plain search text; its chips are small as well.
         desktop = open_board(browser, 1100, "desktop")
+        assert not desktop.locator(".jd-tools-btn").is_visible(), "no More button where every chip fits"
+        assert desktop.locator(".jd-tags button", has_text="Paper drawer").is_visible()
+        for shown in ["Archive", "Drawing", "Ask JotDrop"]:
+            assert desktop.locator(".jd-filters button", has_text=shown).is_visible(), shown
         assert desktop.locator(".jd-brand").is_visible()
         assert desktop.locator(".jd-search").get_attribute("placeholder") == "Search your notes"
         for chip in [desktop.locator(".jd-filters button", has_text="Drawing"), desktop.locator(".jd-filters button", has_text="Ask JotDrop")]:
             size = chip.bounding_box()
             assert size["width"] < 170 and size["height"] < 40, size
+        # Narrowing the window moves the closed Paper drawer into the menu and widening it brings the chip back.
+        desktop.set_viewport_size({"width": 393, "height": 800})
+        desktop.locator(".jd-tools-btn").wait_for(state="visible")
+        assert desktop.locator(".jd-tags button", has_text="Paper drawer").count() == 0
+        desktop.set_viewport_size({"width": 1100, "height": 800})
+        desktop.locator(".jd-tags button", has_text="Paper drawer").wait_for(state="visible")
         desktop.context.close()
         browser.close()
     print("PASS board-narrow-browser")
