@@ -1,6 +1,6 @@
 // plainPreviewText, stripInlineMarks, noteUrls, urlKey and urlHost are copied unchanged from
 // JotDrop cloud/web/note.mjs (b59c35e). In a real build they would be imported from there.
-import { blocks, cellText, parseTable } from '../cloud-shared/format.mjs';
+import { blocks, cellText, linePrefix, listLevels, parseTable } from '../cloud-shared/format.mjs';
 
 /** Plain card text, as the plugin shows it: no emphasis, code, quote, rule, table or escape marks. */
 export function plainPreviewText(text) {
@@ -93,6 +93,9 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   const limit = TASK_LINE.test(body) ? Infinity : max;
   // A table is one card row: a small real table (JotDrop design opmaak-editor, part 9).
   const tables = new Map(blocks(body).filter((run) => run.kind === 'table').map((run) => [run.fromLine, run.toLine]));
+  // Lists in levels (JotDrop design kaarten-en-lijsten, part 7): a task, bullet or numbered line carries its level,
+  // 0 to 2 (the card shows 3 levels), instead of its indent; a bullet shows as •.
+  const levels = listLevels(body);
   for (let i = 0; i < lines.length && out.length < limit; i++) {
     if (i <= frontmatterEnd) continue;
     const line = lines[i];
@@ -114,13 +117,19 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
     if (marker) { if (!fence) fence = marker; else if (marker[0] === fence[0] && marker.length >= fence.length) fence = ''; continue; }
     if (fence) { out.push({ text: line }); continue; }
     const task = /^\s*[-*+] \[([ xX])\] (.*)$/.exec(line);
+    const level = Math.min(Math.max(levels[i], 0), 2);
     if (task) {
       if (tasks++ >= maxTasks) break;
-      out.push({ line: i, checked: task[1] !== ' ', text: plainPreviewText(task[2]) }); continue;
+      out.push({ line: i, checked: task[1] !== ' ', text: plainPreviewText(task[2]), level }); continue;
     }
     if (!line.trim()) { if (out.length && out[out.length - 1].text !== '') out.push({ text: '' }); continue; }
     const cleaned = line.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<img\b[^>]*>/gi, '');
     if (!cleaned.trim()) continue;
+    const prefix = levels[i] >= 0 ? linePrefix(cleaned) : undefined;
+    if (prefix?.kind === 'bullet' || prefix?.kind === 'ordered') {
+      const sign = prefix.kind === 'bullet' ? '•' : `${prefix.number}${prefix.delimiter}`;
+      out.push({ text: `${sign} ${cellPlain(cleaned.slice(prefix.markTo))}`, level }); continue;
+    }
     const text = cellPlain(cleaned);
     if (text.trim()) out.push({ text });
   }

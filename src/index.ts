@@ -4,6 +4,7 @@ import { cloudStatus, credentials, openCloud, registerCloudSettings, startCloud 
 import { endLink, hasListLink, makeLink, setupShareLinks, shareInfo } from './shareLinks';
 import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
+import { tickEdit } from './cloud-shared/format.mjs';
 import { boardRank } from './board/order.js';
 import { fileChip, resourceLinks } from './fileChips.mjs';
 import { aiFileKinds, registerAiSettings, setupAsk } from './ai';
@@ -267,11 +268,17 @@ async function setPaper(id: string, drawer: string, expires: string, warn: strin
 async function toggleTask(id: string, line: number, checked: boolean, expectedUpdated: number) {
 	const note = await joplin.data.get(['notes', id], { fields: ['id', 'body', 'updated_time', 'deleted_time'] });
 	if (!Number.isInteger(line) || line < 0 || Number(note.updated_time) !== expectedUpdated || note.deleted_time) throw new Error('changed');
-	const lines = String(note.body || '').split('\n');
-	if (!/^\s*[-*+] \[[ xX]\] /.test(lines[line] || '')) throw new Error('changed');
-	lines[line] = lines[line].replace(/^(\s*[-*+] \[)[ xX](\] )/, `$1${checked ? 'x' : ' '}$2`);
-	await joplin.data.put(['notes', id], null, { body: lines.join('\n'), ...await keepEditTime(id) });
-	return cardFor(id);
+	const body = String(note.body || '');
+	const lines = body.split('\n');
+	if (!/^\s*[-*+] \[[ xX]\] /.test(lines[line] || '') || /^\s*[-*+] \[[xX]\] /.test(lines[line]) === checked) throw new Error('changed');
+	// The shared core ticks the task and, with "Move checked items to the bottom", moves it in the note (JotDrop design
+	// kaarten-en-lijsten, part 6). A line only the board reads as a task is just ticked, as before.
+	const edit = tickEdit(body, line, !!await joplin.settings.value('moveChecked'));
+	if (!edit) lines[line] = lines[line].replace(/^(\s*[-*+] \[)[ xX](\] )/, `$1${checked ? 'x' : ' '}$2`);
+	const next = edit ? body.slice(0, edit.from) + edit.insert + body.slice(edit.to) : lines.join('\n');
+	await joplin.data.put(['notes', id], null, { body: next, ...await keepEditTime(id) });
+	// The line the task is on now: the board's stroke follows it.
+	return { card: await cardFor(id), line: edit ? edit.line : line };
 }
 
 // Guests' ticks from a live list link: written only when the note has not changed since it was read, and the card stays put.
@@ -498,6 +505,7 @@ joplin.plugins.register({
 			boardNoteId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Board note' },
 			openAtStartup: { value: platform === 'desktop', type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts', description: 'On Android this is off by default: the board is one tap away behind the puzzle button, and opening it at start could land on top of a note you had just opened.' },
 			editedToTop: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move a note to the top of the board when you edit it', description: 'Ticking a checkbox or setting a reminder on the board leaves the card where it is. Pinned notes stay pinned.' },
+			moveChecked: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move checked items to the bottom', description: 'When you tick a task on the board, it moves below the open tasks in its list. Unticking moves it back up. This changes the order of the lines in the note.' },
 			paperTipClosed: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Paper drawer tip closed' },
 		});
 		boardId = String(await joplin.settings.value('boardNoteId') || '') || null;
