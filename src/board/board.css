@@ -141,6 +141,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .jd-compose:not(.is-open) { padding-block: 2px; }
 }
 :root[data-platform="mobile"] .jd-cloud { display: none; }
+
+/* A phone, upright or on its side (forum 51337, 18 Nov): Archive, Drawing, Ask JotDrop and the closed Paper drawer sit in a
+   "More" menu (board.js showTools), so the top is one row: search, notebooks, "More". A view that is on stays a chip: the
+   Archive chip while it is on (✓ in its label), and the Paper drawer chips once it is open. Keep the query in step with
+   COMPACT_QUERY in board.js. Landscape counts too: it is wider than 600 px but only about 360 px high. */
+.jd-tools-btn { display: none; align-items: center; justify-content: center; padding: 5px 10px; }
+.jd-tools-btn svg, .card-menu.menu-tools svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
+.card-menu.menu-tools svg { width: 16px; height: 16px; }
+@media (max-width: 599px), (max-height: 520px) {
+  .jd-filters .jd-tools-btn { display: inline-flex; }
+  .jd-filters .jd-chip.jd-tool, .jd-filters .jd-chip.jd-archive:not([aria-pressed="true"]) { display: none; }
+  .jd-search { flex: 1 1 110px; max-width: none; }
+  .jd-folder { flex: 0 1 150px; }
+  .jd-tags:empty { display: none; }
+  .jd-top { gap: 8px 12px; }
+}
 .card-audio { display: block; width: 100%; height: 36px; margin: 2px 0 8px; }
 
 /* Drawing (shared editor in cloud-shared/drawing-editor.mjs) over the board: the paper is always white, like the saved picture. */

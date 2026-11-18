@@ -23,7 +23,7 @@ const STRINGS = {
     archive: 'Archive', unarchive: 'Back to the board', archived: 'Note archived', unarchived: 'Note back on the board', archiveView: 'Archive', archiveEmpty: 'Nothing in the archive.',
     remind: 'Remind me', laterToday: 'Later today', tomorrow: 'Tomorrow', nextWeek: 'Next week', pickTime: 'Pick a date and time', setReminder: 'Set reminder', removeReminder: 'Remove reminder', reminderAndroid: 'Allow notifications for Joplin in your phone settings, or this reminder stays silent.',
     colors: ['Default', 'Red', 'Orange', 'Yellow', 'Cream', 'Slate blue', 'Blue', 'Purple', 'Pink', 'Brown', 'Gray'],
-    drawing: 'Drawing', newDrawing: 'New drawing', editDrawing: 'Edit drawing', drawingSaved: 'Drawing saved', drawingDesktop: 'Drawing works in Joplin on the desktop for now.',
+    drawing: 'Drawing', tools: 'More', newDrawing: 'New drawing', editDrawing: 'Edit drawing', drawingSaved: 'Drawing saved', drawingDesktop: 'Drawing works in Joplin on the desktop for now.',
     drawLabels: {},
     paperDrawer: 'Paper drawer', newDrawer: 'New drawer', newDrawerName: 'Name of the new drawer', newDrawerPlaceholder: 'For example Work', create: 'Create',
     drawer: 'Drawer', expiresOn: 'Expires on', warnMe: 'Warn me', warnNone: 'No warning',
@@ -56,7 +56,7 @@ const STRINGS = {
     archive: 'Archiveren', unarchive: 'Terug op het bord', archived: 'Notitie gearchiveerd', unarchived: 'Notitie staat weer op het bord', archiveView: 'Archief', archiveEmpty: 'Niets in het archief.',
     remind: 'Herinner me', laterToday: 'Later vandaag', tomorrow: 'Morgen', nextWeek: 'Volgende week', pickTime: 'Kies datum en tijd', setReminder: 'Herinnering zetten', removeReminder: 'Herinnering weghalen', reminderAndroid: 'Sta meldingen voor Joplin toe in je telefooninstellingen, anders blijft deze herinnering stil.',
     colors: ['Standaard', 'Rood', 'Oranje', 'Geel', 'Crème', 'Leiblauw', 'Blauw', 'Paars', 'Roze', 'Bruin', 'Grijs'],
-    drawing: 'Tekening', newDrawing: 'Nieuwe tekening', editDrawing: 'Tekening bewerken', drawingSaved: 'Tekening bewaard', drawingDesktop: 'Tekenen werkt voorlopig in Joplin op de desktop.',
+    drawing: 'Tekening', tools: 'Meer', newDrawing: 'Nieuwe tekening', editDrawing: 'Tekening bewerken', drawingSaved: 'Tekening bewaard', drawingDesktop: 'Tekenen werkt voorlopig in Joplin op de desktop.',
     drawLabels: {
       title: 'Tekening', save: 'Opslaan', cancel: 'Annuleren', canvas: 'Tekenvlak', colors: 'Kleur', widths: 'Dikte',
       black: 'Zwart', blue: 'Blauw', red: 'Rood', green: 'Groen', orange: 'Oranje', purple: 'Paars',
@@ -97,6 +97,10 @@ let locale = 'en';
 let els = null;
 // On a narrow screen the "JotDrop" word and the note count make room (forum 49904, 18 Nov): the count moves into the search box.
 let narrow = null;
+// A phone, upright or on its side (forum 51337, 18 Nov): Archive, Drawing, Ask JotDrop and the Paper drawer move into a "More" menu.
+// A view that is switched on stays visible as a chip, so it is never hidden. Keep the query in step with board.css.
+let compact = null;
+const COMPACT_QUERY = '(max-width: 599px), (max-height: 520px)';
 let noteCount = 0;
 let openMenu = null;
 let reloadTimer = 0;
@@ -155,6 +159,7 @@ const PENCIL = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0
 // A paper tray for the Paper drawer; the box above already means the Archive here.
 const TRAY = 'M19 3H4.99C3.88 3 3.01 3.89 3.01 5L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5c0-1.11-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z';
 const PLUS = 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z';
+const DOTS = 'M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z';
 const SHARE = 'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z';
 // Sparkles for Ask JotDrop, the same sign as in the web app and Obsidian.
 const SPARKLES = 'M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z';
@@ -339,8 +344,7 @@ function buildShell() {
     oninput: (e) => { state.query = e.target.value; state.found = null; runSearch(); } });
   const folder = h('select', { class: 'jd-folder', 'aria-label': t.allNotebooks,
     onchange: (e) => { state.folderId = e.target.value; state.tag = ''; renderAll(true); } });
-  const archive = h('button', { type: 'button', class: 'jd-chip jd-archive', 'aria-pressed': 'false',
-    onclick: () => { state.archive = !state.archive; state.tag = ''; renderAll(true); } });
+  const archive = h('button', { type: 'button', class: 'jd-chip jd-archive', 'aria-pressed': 'false', onclick: toggleArchive });
   const cloud = h('button', { type: 'button', class: 'jd-chip jd-cloud', title: t.cloudTitle,
     onclick: async () => {
       try {
@@ -351,15 +355,11 @@ function buildShell() {
     } });
   // Drawing is for everyone (Eric, 2 Nov): a new drawing becomes a note with the picture in it, like on Android.
   // `jd-tool`, not `jd-draw`: that class is the whole drawing window's look (wide, padded, amber shadow).
-  const draw = h('button', { type: 'button', class: 'jd-chip jd-tool', title: t.newDrawing, 'aria-label': t.newDrawing,
-    onclick: () => openDrawing(null, async (png) => {
-      const card = await post({ type: 'saveDrawing', png, name: drawingFileName(), title: t.drawing, folderId: state.folderId });
-      previews.set(card.id, card.preview);
-      state.cards.unshift(card);
-      renderAll(true);
-      toast(t.drawingSaved);
-    }) }, icon(PENCIL), ` ${t.drawing}`);
+  const draw = h('button', { type: 'button', class: 'jd-chip jd-tool', title: t.newDrawing, 'aria-label': t.newDrawing, onclick: startDrawing }, icon(PENCIL), ` ${t.drawing}`);
   const askChip = h('button', { type: 'button', class: 'jd-chip jd-tool jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`);
+  // Last in the row. Hidden by board.css on a wide screen, where the chips above are all in view.
+  const tools = h('button', { type: 'button', class: 'jd-chip jd-tools-btn', title: t.tools, 'aria-label': t.tools, 'aria-haspopup': 'menu',
+    onclick: (e) => { e.stopPropagation(); showTools(e.currentTarget); } }, icon(DOTS));
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
@@ -374,15 +374,58 @@ function buildShell() {
   els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   narrow = window.matchMedia('(max-width: 599px)');
   narrow.addEventListener('change', renderSearchHint);
+  compact = window.matchMedia(COMPACT_QUERY);
+  // The Paper drawer chip leaves the tag row or comes back with the screen shape.
+  compact.addEventListener('change', () => { if (els && els.tags) renderTags(); });
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
-    h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, cloud));
+    h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, cloud, tools));
   document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toTop, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
   document.addEventListener('click', closeMenu);
   setupDrag();
+}
+
+// The same actions sit behind the chips (wide screen) and the "More" menu (a phone), so each is written once.
+function toggleArchive() {
+  state.archive = !state.archive;
+  state.tag = '';
+  renderAll(true);
+}
+
+// Drawing is for everyone (Eric, 2 Nov): a new drawing becomes a note with the picture in it, like on Android.
+function startDrawing() {
+  openDrawing(null, async (png) => {
+    const card = await post({ type: 'saveDrawing', png, name: drawingFileName(), title: t.drawing, folderId: state.folderId });
+    previews.set(card.id, card.preview);
+    state.cards.unshift(card);
+    renderAll(true);
+    toast(t.drawingSaved);
+  });
+}
+
+function togglePaper() {
+  state.paper = state.paper ? '' : BASE;
+  renderAll(true);
+}
+
+// The "More" menu on a phone. A view that is on carries a ✓ here, and stays a chip on the board as well (the Archive chip,
+// the Paper drawer chips), so nothing is hidden and the state is never only a colour.
+function showTools(anchor) {
+  closeMenu();
+  const archived = state.cards.filter((c) => c.archived).length;
+  const papers = inFolder().filter((c) => inDrawer(c.tags, BASE)).length;
+  const item = (label, path, on, go) => h('button', { type: 'button', role: on === null ? 'menuitem' : 'menuitemcheckbox', 'aria-checked': on === null ? null : String(on),
+    onclick: (e) => { e.stopPropagation(); closeMenu(); go(); } },
+  icon(path), label, on ? h('span', { class: 'menu-check', text: '✓' }) : null);
+  const menu = h('div', { class: 'card-menu menu-tools', role: 'menu', 'aria-label': t.tools },
+    item(`${t.archiveView}${archived ? ` (${archived})` : ''}`, BOX, state.archive, toggleArchive),
+    item(t.drawing, PENCIL, null, startDrawing),
+    item(t.ask, SPARKLES, null, () => askJotDrop.open()),
+    item(`${t.paperDrawer}${papers ? ` (${papers})` : ''}`, TRAY, Boolean(state.paper), togglePaper));
+  showMenu(menu, anchor);
 }
 
 // ---- drawing ----
@@ -548,7 +591,8 @@ function paperChips() {
     onclick: (e) => { e.stopPropagation(); go(); } },
   on ? '✓ ' : '', path ? icon(path) : null, text, n ? h('span', { class: 'jd-chip-count', text: String(n) }) : null);
   const out = [chip(t.paperDrawer, open === BASE, pick(open ? '' : BASE), '', TRAY, count(BASE))];
-  if (!open) return out;
+  // On a phone the closed Paper drawer lives in the "More" menu; once it is open its chips are here.
+  if (!open) return compact && compact.matches ? [] : out;
   const small = [...new Set([...state.drawers, ...cards.flatMap((c) => c.tags.filter((tag) => drawerName(tag)))])]
     .sort((a, b) => drawerName(a).localeCompare(drawerName(b)));
   for (const tag of small) out.push(chip(drawerShown(tag), open === tag, pick(open === tag ? BASE : tag), ' is-small-drawer', null, count(tag)));
