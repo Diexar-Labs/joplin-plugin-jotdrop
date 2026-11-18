@@ -65,8 +65,8 @@ def main():
         # The note box is one low line until it is tapped.
         assert not phone.locator(".jd-c-title").is_visible()
         assert box(phone, ".jd-compose")["height"] < 46, box(phone, ".jd-compose")
-        # One top row: search, notebooks and the "More" button; Archive, Drawing, Ask JotDrop and the Paper drawer are in its menu.
-        for hidden in ["Drawing", "Ask JotDrop", "Archive", "Paper drawer"]:
+        # One top row: search, notebooks and the "More" button; Archive, Drawing, Ask JotDrop, Find duplicates and the Paper drawer are in its menu.
+        for hidden in ["Drawing", "Ask JotDrop", "Find duplicates", "Archive", "Paper drawer"]:
             assert not phone.locator(".jd-filters button, .jd-tags button", has_text=hidden).first.is_visible(), hidden
         tools = phone.locator(".jd-tools-btn")
         assert tools.is_visible() and tools.get_attribute("aria-label") == "More" and tools.get_attribute("aria-haspopup") == "menu"
@@ -74,13 +74,13 @@ def main():
         assert max(rows) - min(rows) < 12, f"search, notebooks and More should share a row: {rows}"
         assert tools.bounding_box()["width"] >= 36 and tools.bounding_box()["height"] >= 30, tools.bounding_box()
         assert phone.locator(".jd-tags").evaluate("el => el.children.length === 0 && getComputedStyle(el).display") == "none", "an empty tag row takes no room, not even its margin"
-        # The menu: four items, none switched on, Esc closes it.
+        # The menu: five items, none switched on, Esc closes it.
         tools.tap()
         menu = phone.locator(".menu-tools")
         menu.wait_for()
         names = [text.strip() for text in menu.locator("button").all_inner_texts()]
-        assert names == ["Archive", "Drawing", "Ask JotDrop", "Paper drawer"], names
-        assert [b.get_attribute("aria-checked") for b in menu.locator("button").all()] == ["false", None, None, "false"]
+        assert names == ["Archive", "Drawing", "Ask JotDrop", "Find duplicates", "Paper drawer"], names
+        assert [b.get_attribute("aria-checked") for b in menu.locator("button").all()] == ["false", None, None, None, "false"]
         phone.keyboard.press("Escape")
         menu.wait_for(state="detached")
         # Archive on: the item says so, and the Archive chip shows up with its ✓ so the state is not only in the menu.
@@ -108,6 +108,12 @@ def main():
         phone.locator(".menu-tools button", has_text="Drawing").tap()
         phone.locator(".jd-draw-overlay").wait_for()
         phone.locator(".jd-draw-overlay").evaluate("el => el.remove()")
+        # Find duplicates from the menu opens its window too (and Close shuts it).
+        tools.tap()
+        phone.locator(".menu-tools button", has_text="Find duplicates").tap()
+        phone.locator(".jd-ask-overlay[aria-label='Find duplicates']").wait_for()
+        phone.locator(".jd-ask-overlay[aria-label='Find duplicates'] button", has_text="Close").tap()
+        phone.locator(".jd-ask-overlay[aria-label='Find duplicates']").wait_for(state="detached")
         # The first card starts in the top 20% of an 800 px screen (it was ~49%, then ~31%, now one row of tools: ~13%).
         first = box(phone, ".note-card")["y"]
         assert first < 0.2 * 800, first
@@ -136,7 +142,7 @@ def main():
         side = open_board(browser, 800, "mobile", height=360)
         assert side.locator(".jd-brand").is_visible()
         assert side.locator(".jd-tools-btn").is_visible()
-        for hidden in ["Drawing", "Ask JotDrop", "Archive", "Paper drawer"]:
+        for hidden in ["Drawing", "Ask JotDrop", "Find duplicates", "Archive", "Paper drawer"]:
             assert not side.locator(".jd-filters button, .jd-tags button", has_text=hidden).first.is_visible(), hidden
         centres = [(lambda b: b["y"] + b["height"] / 2)(box(side, selector)) for selector in [".jd-word", ".jd-search", ".jd-folder", ".jd-tools-btn"]]
         assert max(centres) - min(centres) < 10, f"one row, centred: {centres}"
@@ -146,11 +152,11 @@ def main():
         desktop = open_board(browser, 1100, "desktop")
         assert not desktop.locator(".jd-tools-btn").is_visible(), "no More button where every chip fits"
         assert desktop.locator(".jd-tags button", has_text="Paper drawer").is_visible()
-        for shown in ["Archive", "Drawing", "Ask JotDrop"]:
+        for shown in ["Archive", "Drawing", "Ask JotDrop", "Find duplicates"]:
             assert desktop.locator(".jd-filters button", has_text=shown).is_visible(), shown
         assert desktop.locator(".jd-brand").is_visible()
         assert desktop.locator(".jd-search").get_attribute("placeholder") == "Search your notes"
-        for chip in [desktop.locator(".jd-filters button", has_text="Drawing"), desktop.locator(".jd-filters button", has_text="Ask JotDrop")]:
+        for chip in [desktop.locator(".jd-filters button", has_text="Drawing"), desktop.locator(".jd-filters button", has_text="Ask JotDrop"), desktop.locator(".jd-filters button", has_text="Find duplicates")]:
             size = chip.bounding_box()
             assert size["width"] < 170 and size["height"] < 40, size
         # Narrowing the window moves the closed Paper drawer into the menu and widening it brings the chip back.

@@ -14,16 +14,23 @@ export const AI_STORE_PATH = 'local/ai.json';
 // a local model through Ollama is, first, because nothing leaves the computer.
 export const WEB_PROVIDERS = Object.fromEntries(['ollama', 'anthropic', 'openai', 'gemini', 'openrouter'].map((id) => [id, PROVIDERS[id]]));
 
-/** What is stored, cleaned: only known fields, a provider the web app can use, no key for a local model. */
+/**
+ * What is stored, cleaned: only known fields, a provider the web app can use, no key for a local model.
+ * `synced` is for "Use this key on all my devices": the server's time of the shared key this browser follows, 0 when
+ * its key is its own.
+ */
 export function aiSettings(stored) {
   const value = stored && typeof stored === 'object' ? stored : {};
   const provider = Object.hasOwn(WEB_PROVIDERS, value.provider) ? value.provider : '';
-  if (!provider) return { provider: '', key: '', model: '', includeShared: false };
+  const synced = Number.isSafeInteger(value.synced) && value.synced > 0 ? value.synced : 0;
+  if (!provider) return { provider: '', key: '', model: '', includeShared: false, synced: 0 };
   return {
     provider,
     key: WEB_PROVIDERS[provider].needsKey ? String(value.key ?? '').trim() : '',
     model: String(value.model ?? '').trim(),
     includeShared: Boolean(value.includeShared),
+    // A local model has no key, so there is nothing to follow.
+    synced: WEB_PROVIDERS[provider].needsKey ? synced : 0,
   };
 }
 
@@ -31,14 +38,16 @@ const isNotePath = (path) => /\.md$/i.test(path) && path.startsWith('notes/') &&
 
 /**
  * The notes Ask JotDrop may look at, from [{ id, path, text, modifiedAt, deleted }]: Notes and Archive, as
- * { id, title, text, labels, updatedAt, shared }. text is the note without front matter and title. shared marks a
+ * { id, title, text, labels, updatedAt, reminder, expires, shared }. text is the note without front matter and title;
+ * reminder ("YYYY-MM-DDTHH:MM") and expires ("YYYY-MM-DD") are the note's properties or '' (the week overview and
+ * the duplicate search read them). shared marks a
  * note in a shared group or with a live list link (sharedPaths), which stays home unless the user allows it.
  */
 export function aiNotes(entries, { sharedPaths = [], inSpace = false } = {}) {
   const shared = new Set(sharedPaths);
   return entries.filter((entry) => !entry.deleted && isNotePath(entry.path)).map((entry) => {
     const parts = noteSummary(entry.text, entry.path);
-    return { id: entry.id, title: parts.title, text: splitNote(entry.text).body, labels: parts.labels, updatedAt: entry.modifiedAt, shared: inSpace || shared.has(entry.path) };
+    return { id: entry.id, title: parts.title, text: splitNote(entry.text).body, labels: parts.labels, updatedAt: entry.modifiedAt, reminder: parts.reminder, expires: parts.expires, shared: inSpace || shared.has(entry.path) };
   });
 }
 
