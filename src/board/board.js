@@ -14,7 +14,7 @@ const STRINGS = {
   en: {
     tableMore: (columns, rows) => [columns ? `+ ${columns} ${columns === 1 ? 'column' : 'columns'}` : '', rows ? `+ ${rows} ${rows === 1 ? 'row' : 'rows'}` : ''].filter(Boolean).join(' · '),
     checkedItems: (n) => `+ ${n} checked ${n === 1 ? 'item' : 'items'}`, openNote: (n) => n ? `Open note - ${n} more ${n === 1 ? 'task' : 'tasks'}` : 'Open note',
-    search: 'Search your notes', allNotebooks: 'All notebooks', allTags: 'All', takeNote: 'Take a note…', title: 'Title',
+    search: 'Search your notes', searchIn: (n) => `Search ${n === 1 ? '1 note' : `${n} notes`}`, allNotebooks: 'All notebooks', allTags: 'All', takeNote: 'Take a note…', title: 'Title',
     close: 'Close', savesTo: 'Saves to', pinned: 'Pinned', others: 'Others', pin: 'Pin', unpin: 'Unpin', color: 'Color',
     noNotes: 'No notes yet. Take your first note above.', noMatch: 'No notes match.', empty: 'Empty note',
     changed: 'This checklist changed in the meantime. The board shows the latest version again.', failed: 'That did not work. Please try again.',
@@ -47,7 +47,7 @@ const STRINGS = {
   nl: {
     tableMore: (columns, rows) => [columns ? `+ ${columns} ${columns === 1 ? 'kolom' : 'kolommen'}` : '', rows ? `+ ${rows} ${rows === 1 ? 'rij' : 'rijen'}` : ''].filter(Boolean).join(' · '),
     checkedItems: (n) => `+ ${n} ${n === 1 ? 'afgevinkt item' : 'afgevinkte items'}`, openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
-    search: 'Zoek in je notities', allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
+    search: 'Zoek in je notities', searchIn: (n) => `Zoek in ${n === 1 ? '1 notitie' : `${n} notities`}`, allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
     close: 'Sluiten', savesTo: 'Komt in', pinned: 'Vastgezet', others: 'Overige', pin: 'Vastzetten', unpin: 'Losmaken', color: 'Kleur',
     noNotes: 'Nog geen notities. Maak hierboven je eerste notitie.', noMatch: 'Geen notities gevonden.', empty: 'Lege notitie',
     changed: 'Deze checklist is intussen veranderd. Het bord toont weer de nieuwste versie.', failed: 'Dat lukte niet. Probeer het nog eens.',
@@ -95,6 +95,9 @@ const STRINGS = {
 let t = STRINGS.en;
 let locale = 'en';
 let els = null;
+// On a narrow screen the "JotDrop" word and the note count make room (forum 49904, 18 Nov): the count moves into the search box.
+let narrow = null;
+let noteCount = 0;
 let openMenu = null;
 let reloadTimer = 0;
 let columnsShown = 0;
@@ -321,6 +324,10 @@ function runSearch() {
   }, 200);
 }
 
+function renderSearchHint() {
+  if (els) els.search.placeholder = narrow && narrow.matches && noteCount ? t.searchIn(noteCount) : t.search;
+}
+
 function folderName(id) {
   return (state.folders.find((f) => f.id === id) || {}).title || '';
 }
@@ -343,7 +350,8 @@ function buildShell() {
       scheduleReload(0);
     } });
   // Drawing is for everyone (Eric, 2 Nov): a new drawing becomes a note with the picture in it, like on Android.
-  const draw = h('button', { type: 'button', class: 'jd-chip jd-draw', title: t.newDrawing, 'aria-label': t.newDrawing,
+  // `jd-tool`, not `jd-draw`: that class is the whole drawing window's look (wide, padded, amber shadow).
+  const draw = h('button', { type: 'button', class: 'jd-chip jd-tool', title: t.newDrawing, 'aria-label': t.newDrawing,
     onclick: () => openDrawing(null, async (png) => {
       const card = await post({ type: 'saveDrawing', png, name: drawingFileName(), title: t.drawing, folderId: state.folderId });
       previews.set(card.id, card.preview);
@@ -351,7 +359,7 @@ function buildShell() {
       renderAll(true);
       toast(t.drawingSaved);
     }) }, icon(PENCIL), ` ${t.drawing}`);
-  const askChip = h('button', { type: 'button', class: 'jd-chip jd-draw jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`);
+  const askChip = h('button', { type: 'button', class: 'jd-chip jd-tool jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`);
   const count = h('p', { class: 'jd-count' });
   const tags = h('div', { class: 'jd-tags' });
   const grid = h('div', { class: 'jd-grid' });
@@ -364,6 +372,8 @@ function buildShell() {
   const showToTop = () => toTop.classList.toggle('is-shown', scroller.scrollTop > window.innerHeight);
   window.addEventListener('scroll', showToTop, { passive: true });
   els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
+  narrow = window.matchMedia('(max-width: 599px)');
+  narrow.addEventListener('change', renderSearchHint);
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
     h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, cloud));
@@ -648,6 +658,8 @@ async function renderGrid(fromTop) {
   const others = sortCards(cards.filter((c) => !c.pinned));
   const all = [...pinned, ...others];
   els.count.textContent = t.notes(cards.length);
+  noteCount = cards.length;
+  renderSearchHint();
   const count = fromTop ? Math.min(PAGE, all.length) : Math.min(Math.max(PAGE, shown, restore ? restore.shown : 0), all.length);
   try {
     await ensurePreviews(all.slice(0, count));
