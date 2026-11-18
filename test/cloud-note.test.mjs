@@ -51,7 +51,8 @@ test('labels, frontmatter tags and inline hashtags become one lower-case list', 
 test('archive, trash, conflict copies and other files are not notes for Joplin', () => {
   assert.ok(isCloudNote('notes/a.md'));
   assert.ok(isCloudNote('notes/Work/a.md'));
-  for (const path of ['notes/Archive/a.md', 'notes/Trash/a.md', 'notes/a.cloud-conflict-r2.md', 'notes/a.cloud-recovery-r2.md', 'attachments/a.md', 'notes/a.png']) assert.ok(!isCloudNote(path), path);
+  assert.ok(isCloudNote('notes/Shared/a.md'), 'An ordinary folder called Shared stays ordinary');
+  for (const path of ['notes/Archive/a.md', 'notes/Trash/a.md', 'notes/a.cloud-conflict-r2.md', 'notes/a.cloud-recovery-r2.md', 'attachments/a.md', 'notes/a.png', 'notes/Shared/3f2a1c9e-8b7d-4e6f-a5c4-1d2e3f4a5b6c/a.md']) assert.ok(!isCloudNote(path), path);
 });
 
 test('the same note gets the same ID on every computer, a valid Joplin ID, and differs per account', async () => {
