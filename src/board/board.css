@@ -130,6 +130,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :root[data-platform="mobile"] body { font-size: 14px; }
 :root[data-platform="mobile"] .card-cover { max-height: 150px; }
 @media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-search { max-width: none; } }
+/* Less room above the first card on a narrow screen (forum 49904): Joplin already shows the note title "JotDrop", so our own
+   "JotDrop" word goes, and the note count lives in the search box (renderSearchHint). The closed note box is one low line. */
+.jd-compose:not(.is-open) .jd-c-body { resize: none; }
+@media (max-width: 599px) {
+  .jd-brand { display: none; }
+  .jd-top { margin-bottom: 8px; }
+  .jd-tags { margin-bottom: 10px; }
+  .jd-compose { margin-bottom: 14px; }
+  .jd-compose:not(.is-open) { padding-block: 2px; }
+}
 :root[data-platform="mobile"] .jd-cloud { display: none; }
 .card-audio { display: block; width: 100%; height: 36px; margin: 2px 0 8px; }
 
@@ -159,8 +169,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-draw-ask p { margin: 0 0 12px; font-weight: 600; }
 .jd-draw-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .jd-draw svg { width: 18px; height: 18px; fill: currentColor; }
-.jd-chip.jd-draw { display: inline-flex; align-items: center; gap: 4px; }
-.jd-chip.jd-draw svg { width: 16px; height: 16px; fill: currentColor; }
+.jd-chip.jd-tool { display: inline-flex; align-items: center; gap: 4px; }
+.jd-chip.jd-tool svg { width: 16px; height: 16px; fill: currentColor; }
 
 /* Paper drawer: its chip with a tray icon, small drawers after it, the intro and the expiry badge. */
 .jd-paper-chip { display: inline-flex; align-items: center; gap: 4px; }
