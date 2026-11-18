@@ -430,6 +430,7 @@ function showTools(anchor) {
     item(`${t.archiveView}${archived ? ` (${archived})` : ''}`, BOX, state.archive, toggleArchive),
     item(t.drawing, PENCIL, null, startDrawing),
     item(t.ask, SPARKLES, null, () => askJotDrop.open()),
+    item(t.dup, COPY, null, () => duplicates.open()),
     item(`${t.paperDrawer}${papers ? ` (${papers})` : ''}`, TRAY, Boolean(state.paper), togglePaper));
   showMenu(menu, anchor);
 }
