@@ -79,3 +79,27 @@ test('a table in a code block stays code', () => {
   const lines = previewLines('```\n| a | b |\n|---|---|\n```', '', Infinity, Infinity);
   assert.equal(lines.some((line) => line.table), false);
 });
+
+test('&nbsp; is a space, not text: an empty paragraph is a blank line and a note of only &nbsp; has no text', () => {
+  assert.deepEqual(previewLines('&nbsp;', 'Dessin à main levée.svg'), []);
+  assert.deepEqual(previewLines('![drawing](:/0123456789abcdef0123456789abcdef)\n\n&nbsp;', 'Dessin'), []);
+  assert.deepEqual(texts(previewLines('Eerste\n&nbsp;\n&nbsp;\nTweede', 'T')), ['Eerste', '', 'Tweede']);
+  assert.deepEqual(texts(previewLines('a&nbsp;b &nbsp; c', 'T')), ['a b   c']);
+});
+
+test('&nbsp; stays as typed inside inline code and fenced code, as Markdown shows it', () => {
+  assert.deepEqual(texts(previewLines('Use `&nbsp;` for a space, not&nbsp;this', 'T')), ['Use &nbsp; for a space, not this']);
+  assert.deepEqual(texts(previewLines('```html\n<p>&nbsp;</p>\n```\n&nbsp;', 'T')), ['<p>&nbsp;</p>']);
+});
+
+test('&nbsp; in a task or a bullet changes no line index', () => {
+  const tasks = previewLines('&nbsp;\n- [ ] milk&nbsp;&nbsp;2\n- bullet&nbsp;x\n- [x] done', 'T', Infinity, Infinity);
+  assert.deepEqual(tasks.filter((line) => line.line !== undefined).map((line) => [line.line, line.checked, line.text]), [[1, false, 'milk  2'], [3, true, 'done']]);
+  assert.ok(tasks.some((line) => line.text === '• bullet x'));
+});
+
+test('&nbsp; in a table cell is a space, and an empty cell stays empty', () => {
+  const table = previewLines('| a | b&nbsp;c |\n|---|---|\n| 1 | &nbsp; |', 'T').find((line) => line.table);
+  assert.deepEqual(table.table.header, ['a', 'b c']);
+  assert.deepEqual(table.table.rows, [['1', '']]);
+});

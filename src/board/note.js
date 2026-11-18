@@ -82,6 +82,11 @@ export function cellPlain(text) {
   return plainPreviewText(text.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<img\b[^>]*>/gi, '').replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
 }
 
+// Joplin's rich-text editor saves an empty paragraph and a non-breaking space as &nbsp;, and Markdown shows it as a space.
+// The card does the same, except inside `inline code`, where Markdown shows it as typed. Fenced code is left alone by the caller.
+const NBSP = /(`+)[^`\n]+?\1|&nbsp;/g;
+const spaced = (line) => (line.includes('&nbsp;') ? line.replace(NBSP, (whole) => (whole === '&nbsp;' ? ' ' : whole)) : line);
+
 export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   const out = [];
   const lines = body.split(/\r?\n/);
@@ -98,7 +103,7 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
   const levels = listLevels(body);
   for (let i = 0; i < lines.length && out.length < limit; i++) {
     if (i <= frontmatterEnd) continue;
-    const line = lines[i];
+    const line = fence ? lines[i] : spaced(lines[i]);
     // Joplin notes often repeat their title as a first heading; like JotDrop elsewhere, the card shows it once.
     if (!started && line.trim()) {
       started = true;
@@ -107,7 +112,7 @@ export function previewLines(body, title = '', max = 12, maxTasks = 5) {
     }
     const tableEnd = !fence ? tables.get(i) : undefined;
     if (tableEnd !== undefined) {
-      const table = parseTable(lines.slice(i, tableEnd + 1));
+      const table = parseTable(lines.slice(i, tableEnd + 1).map(spaced));
       // Its text is the table in words, as the card showed it before: cells joined with " · ".
       out.push({ table, text: [table.header, ...table.rows].map((cells) => cells.map((cell) => cellPlain(cellText(cell)).trim()).filter(Boolean).join(' · ')).join('\n') });
       i = tableEnd;
