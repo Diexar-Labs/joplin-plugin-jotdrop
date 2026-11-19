@@ -22,6 +22,7 @@ const STRINGS = {
     saved: 'Note saved', due: 'Due', overdue: 'Overdue', notes: (n) => (n === 1 ? '1 note' : `${n} notes`),
     cloudOff: 'JotDrop Cloud', cloudOn: '✓ Cloud', cloudProblem: '⚠ Cloud', cloudTitle: 'Bring in notes from the JotDrop app',
     archive: 'Archive', unarchive: 'Back to the board', archived: 'Note archived', unarchived: 'Note back on the board', archiveView: 'Archive', archiveEmpty: 'Nothing in the archive.',
+    undo: 'Undo', undone: 'Undone', pinnedNote: 'Note pinned', unpinnedNote: 'Note unpinned',
     remind: 'Remind me', laterToday: 'Later today', tomorrow: 'Tomorrow', nextWeek: 'Next week', pickTime: 'Pick a date and time', setReminder: 'Set reminder', removeReminder: 'Remove reminder', reminderAndroid: 'Allow notifications for Joplin in your phone settings, or this reminder stays silent.',
     colors: ['Default', 'Red', 'Orange', 'Yellow', 'Cream', 'Slate blue', 'Blue', 'Purple', 'Pink', 'Brown', 'Gray'],
     drawing: 'Drawing', tools: 'More', newDrawing: 'New drawing', editDrawing: 'Edit drawing', drawingSaved: 'Drawing saved', drawingDesktop: 'Drawing works in Joplin on the desktop for now.',
@@ -55,6 +56,7 @@ const STRINGS = {
     saved: 'Notitie bewaard', due: 'Klaar op', overdue: 'Te laat', notes: (n) => (n === 1 ? '1 notitie' : `${n} notities`),
     cloudOff: 'JotDrop Cloud', cloudOn: '✓ Cloud', cloudProblem: '⚠ Cloud', cloudTitle: 'Notities uit de JotDrop-app binnenhalen',
     archive: 'Archiveren', unarchive: 'Terug op het bord', archived: 'Notitie gearchiveerd', unarchived: 'Notitie staat weer op het bord', archiveView: 'Archief', archiveEmpty: 'Niets in het archief.',
+    undo: 'Ongedaan maken', undone: 'Ongedaan gemaakt', pinnedNote: 'Notitie vastgezet', unpinnedNote: 'Notitie losgemaakt',
     remind: 'Herinner me', laterToday: 'Later vandaag', tomorrow: 'Morgen', nextWeek: 'Volgende week', pickTime: 'Kies datum en tijd', setReminder: 'Herinnering zetten', removeReminder: 'Herinnering weghalen', reminderAndroid: 'Sta meldingen voor Joplin toe in je telefooninstellingen, anders blijft deze herinnering stil.',
     colors: ['Standaard', 'Rood', 'Oranje', 'Geel', 'Crème', 'Leiblauw', 'Blauw', 'Paars', 'Roze', 'Bruin', 'Grijs'],
     drawing: 'Tekening', tools: 'Meer', newDrawing: 'Nieuwe tekening', editDrawing: 'Tekening bewerken', drawingSaved: 'Tekening bewaard', drawingDesktop: 'Tekenen werkt voorlopig in Joplin op de desktop.',
@@ -191,12 +193,14 @@ const askJotDrop = createAsk({ h, post, toast, openCard, fileIcon: (kind) => ico
 // Find duplicates compares on this device; "Merge with AI" hands the pair to the Ask window.
 const duplicates = createDuplicates({ h, post, openAsk: (options) => askJotDrop.open(options) });
 
-function toast(text) {
+// A toast with an Undo button stays longer: a thumb needs time to find it (forum 51337, 19 Nov).
+function toast(text, undo) {
   if (!els) return;
   els.toast.textContent = text;
+  if (undo) els.toast.append(' ', h('button', { type: 'button', class: 'jd-toast-undo', onclick: () => { els.toast.classList.remove('is-shown'); undo(); } }, t.undo));
   els.toast.classList.add('is-shown');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => els.toast.classList.remove('is-shown'), 3500);
+  toast.timer = setTimeout(() => els.toast.classList.remove('is-shown'), undo ? 7000 : 3500);
 }
 
 function applyTheme() {
@@ -261,15 +265,21 @@ async function ensurePreviews(cards) {
   }
 }
 
-async function update(message, done) {
+async function update(message, done, undo) {
   try {
     replaceCard(await post(message));
-    if (done) toast(done);
+    if (done) toast(done, undo);
   } catch (error) {
     if (message.type === 'saveDrawing') throw error;
     toast(String(error && error.message).includes('changed') ? t.changed : t.failed);
     await load();
   }
+}
+
+// Archive, unarchive, pin and unpin are one tap and easy to hit by accident: the toast offers Undo, which sets the old value back.
+function undoable(c, type, key, done) {
+  const was = c[key];
+  update({ type, id: c.id, [key]: !was }, done, () => update({ type, id: c.id, [key]: was }, t.undone));
 }
 
 function replaceCard(card) {
@@ -509,7 +519,9 @@ function buildComposer() {
   const where = h('span', { class: 'jd-c-where' });
   const save = h('button', { type: 'submit', class: 'jd-c-save', text: t.close });
   const form = h('form', { class: 'jd-compose' }, title, body, h('div', { class: 'jd-c-bar' }, where, save));
-  const close = () => { form.classList.remove('is-open'); body.rows = 1; if (form.contains(document.activeElement)) document.activeElement.blur(); };
+  // A size the user dragged with the handle belongs to the open box: a closed box is one line again (forum 51337, 19 Nov), and the size comes back when the box opens.
+  let dragged = '';
+  const close = () => { dragged = body.style.height || dragged; body.style.height = ''; form.classList.remove('is-open'); body.rows = 1; if (form.contains(document.activeElement)) document.activeElement.blur(); };
   const submit = async () => {
     if (!title.value.trim() && !body.value.trim()) return close();
     save.disabled = true;
@@ -529,6 +541,7 @@ function buildComposer() {
     }
   };
   form.addEventListener('focusin', () => {
+    if (!form.classList.contains('is-open') && dragged) body.style.height = dragged;
     form.classList.add('is-open');
     body.rows = 3;
     where.textContent = `${t.savesTo}: ${folderName(state.folderId || state.boardFolder)}`;
@@ -841,7 +854,7 @@ function cardEl(c) {
   if (chips.length) card.append(h('div', { class: 'jd-chips' }, chips));
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
-      onclick: (e) => { e.stopPropagation(); update({ type: 'setPinned', id: c.id, pinned: !c.pinned }); } }, icon(PIN, c.pinned)),
+      onclick: (e) => { e.stopPropagation(); undoable(c, 'setPinned', 'pinned', c.pinned ? t.unpinnedNote : t.pinnedNote); } }, icon(PIN, c.pinned)),
     h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), askButton(c, shownNote.askFiles), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
@@ -951,7 +964,7 @@ function colorButton(c) {
 function archiveButton(c) {
   const label = c.archived ? t.unarchive : t.archive;
   return h('button', { type: 'button', class: 'jd-act', title: label, 'aria-label': label,
-    onclick: (e) => { e.stopPropagation(); update({ type: 'setArchived', id: c.id, archived: !c.archived }, c.archived ? t.unarchived : t.archived); } }, icon(c.archived ? UNBOX : BOX));
+    onclick: (e) => { e.stopPropagation(); undoable(c, 'setArchived', 'archived', c.archived ? t.unarchived : t.archived); } }, icon(c.archived ? UNBOX : BOX));
 }
 
 function reminderButton(c) {
