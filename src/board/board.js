@@ -390,7 +390,15 @@ function buildShell() {
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
-  document.addEventListener('click', closeMenu);
+  // A tap outside an open menu only closes it: the card or button under the finger must not act as well (forum 51337, 18 Nov).
+  // It runs in the capture phase, before every other handler, so the "More" button closes its own menu instead of opening it
+  // again, and the same goes for all the menus.
+  document.addEventListener('click', (e) => {
+    if (!openMenu || openMenu.contains(e.target)) return;
+    e.stopPropagation();
+    e.preventDefault();
+    closeMenu();
+  }, true);
   setupDrag();
 }
 
@@ -1184,7 +1192,8 @@ function setupDrag() {
 
   els.grid.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.note-card');
-    if (!el || e.button !== 0 || !e.isPrimary || e.target.closest('button, a, input, select, textarea, audio')) return;
+    // With a menu open a press outside it only closes the menu (its click, above): it does not pick the card up either.
+    if (!el || openMenu || e.button !== 0 || !e.isPrimary || e.target.closest('button, a, input, select, textarea, audio')) return;
     const card = state.cards.find((c) => c.id === el.dataset.id);
     if (!card) return;
     cancelPending();
