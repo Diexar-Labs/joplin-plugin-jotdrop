@@ -362,8 +362,10 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
         el.actions.append(h('li', {}, actionLine(action),
           action.made ? h('button', { type: 'button', class: 'jd-ask-inline', onclick: () => { close(); openCard(action.made); } }, 'Open') : null));
       }
+      // A merge whose new text was applied to the newer note: the merged text is in that note, so the AI's answer has nothing left to save.
+      const mergeApplied = Boolean(merge) && result.actions.some((done) => done.tool === 'replace_note_text' && done.status === 'done' && done.id === merge.newer.id);
       // After a merge that was applied, the older note is still there: moving it to the trash is the user's own step.
-      if (merge && result.actions.some((done) => done.tool === 'replace_note_text' && done.status === 'done' && done.id === merge.newer.id)) {
+      if (mergeApplied) {
         const row = h('li', {}, `The older note "${merge.older.title}" is still there. `);
         row.append(h('button', { type: 'button', class: 'jd-ask-inline', onclick: async () => {
           try { await post({ type: 'aiTrash', id: merge.older.id }); row.textContent = `Moved "${merge.older.title}" to the trash.`; } catch (error) { el.status.textContent = String(error?.message || error); }
@@ -371,7 +373,9 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
         el.actions.append(row);
       }
       // In words what went: the question (a recording goes on its own), the notes, and each file by name.
-      const went = [...(action === 'transcribe' ? [] : ['your question']), ...(result.first ? [`${result.first} ${result.first === 1 ? 'note' : 'notes'}`] : []),
+      // "This week" sends a digest (title, first line, open tasks, dates), not the notes themselves: the line says so.
+      const noteWords = `${result.first} ${result.first === 1 ? 'note' : 'notes'}`;
+      const went = [...(action === 'transcribe' ? [] : ['your question']), ...(result.first ? [week ? `a digest of ${noteWords}` : noteWords] : []),
         ...result.files.map((file) => `the ${FILE_NOUNS[file.kind] || 'file'} "${file.name}"`)];
       const wentText = went.length > 1 ? `${went.slice(0, -1).join(', ')} and ${went[went.length - 1]}` : went[0];
       el.also.textContent = result.stop === 'off' || result.nothingSent ? 'Nothing was sent.'
@@ -391,7 +395,8 @@ export function createAsk({ h, post, toast, openCard, fileIcon }) {
         const title = merge ? `Merged text of ${merge.newer.title}` : titled && note ? `${titled} ${note.title || 'Untitled'}` : request.split('\n')[0].slice(0, 80);
         try { await post({ type: 'create', title, body: `${result.answer.trim()}\n` }); el.status.textContent = `Saved as the note "${title}".`; save.remove(); } catch (error) { el.status.textContent = String(error?.message || error); }
       } }, 'Save as a new note');
-      el.useButtons.append(save, h('button', { type: 'button', onclick: toggleReport }, 'Report'));
+      // After an applied merge the merged text is in the newer note; saving the AI's sentence about it would only make a useless note.
+      el.useButtons.append(...(mergeApplied ? [] : [save]), h('button', { type: 'button', onclick: toggleReport }, 'Report'));
     }
 
     // "Receipt to Paper drawer": the AI's fields in one screen to check and change. Nothing is saved before Apply,
