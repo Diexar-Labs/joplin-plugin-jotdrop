@@ -15,10 +15,11 @@ def main():
     bodies = {f"n{i}": f"- [ ] task {i}" if i % 2 else f"Short note {i}" for i in range(54)}
     cards = [{"id": key, "title": f"Note {i}", "color": "default", "tags": [], "pinned": False, "archived": False, "updated": 1, "rank": 1000 - i, "folderId": "f"} for i, key in enumerate(bodies)]
     bridge = """
-      window.data = DATA; window.bodies = BODIES;
+      window.data = DATA; window.bodies = BODIES; window.posts = [];
       window.webviewApi = {
         onMessage(cb) {},
         async postMessage(m) {
+          window.posts.push(m.type);
           if (m.type === 'load') return data;
           if (m.type === 'previews') return m.ids.map(id => ({id, body:bodies[id], updated:1, files:[]}));
           if (m.type === 'search') return data.cards.filter(c=>bodies[c.id].includes(m.text)).map(c=>c.id);
@@ -50,6 +51,7 @@ def main():
         else:
             page.locator(".jd-empty").wait_for()
         assert not errors, errors
+        page.jd_errors = errors
         return page
 
     def box(page, selector):
@@ -65,13 +67,17 @@ def main():
         # The note box is one low line until it is tapped.
         assert not phone.locator(".jd-c-title").is_visible()
         assert box(phone, ".jd-compose")["height"] < 46, box(phone, ".jd-compose")
-        # One top row: search, notebooks and the "More" button; Archive, Drawing, Ask JotDrop, Find duplicates and the Paper drawer are in its menu.
+        # Two top rows (forum 51337, 18 Nov): search and the "More" button, and under them the notebooks on a row of their own;
+        # Archive, Drawing, Ask JotDrop, Find duplicates and the Paper drawer are in the menu.
         for hidden in ["Drawing", "Ask JotDrop", "Find duplicates", "Archive", "Paper drawer"]:
             assert not phone.locator(".jd-filters button, .jd-tags button", has_text=hidden).first.is_visible(), hidden
         tools = phone.locator(".jd-tools-btn")
         assert tools.is_visible() and tools.get_attribute("aria-label") == "More" and tools.get_attribute("aria-haspopup") == "menu"
-        rows = [box(phone, selector)["y"] for selector in [".jd-search", ".jd-folder", ".jd-tools-btn"]]
-        assert max(rows) - min(rows) < 12, f"search, notebooks and More should share a row: {rows}"
+        rows = [box(phone, selector)["y"] for selector in [".jd-search", ".jd-tools-btn"]]
+        assert max(rows) - min(rows) < 12, f"search and More should share a row: {rows}"
+        search_box, folder_box = box(phone, ".jd-search"), box(phone, ".jd-folder")
+        assert folder_box["y"] >= search_box["y"] + search_box["height"], f"the notebooks go under the search box: {search_box} {folder_box}"
+        assert folder_box["width"] > 393 - 40, f"the notebooks take the whole row: {folder_box}"
         assert tools.bounding_box()["width"] >= 36 and tools.bounding_box()["height"] >= 30, tools.bounding_box()
         assert phone.locator(".jd-tags").evaluate("el => el.children.length === 0 && getComputedStyle(el).display") == "none", "an empty tag row takes no room, not even its margin"
         # The menu: five items, none switched on, Esc closes it.
@@ -114,9 +120,54 @@ def main():
         phone.locator(".jd-ask-overlay[aria-label='Find duplicates']").wait_for()
         phone.locator(".jd-ask-overlay[aria-label='Find duplicates'] button", has_text="Close").tap()
         phone.locator(".jd-ask-overlay[aria-label='Find duplicates']").wait_for(state="detached")
-        # The first card starts in the top 20% of an 800 px screen (it was ~49%, then ~31%, now one row of tools: ~13%).
+        # A tap outside an open menu only closes it (forum 51337, 18 Nov): "More" closes its own menu, and a card under the
+        # finger does not open. The same for a card's colour menu, and a drag with a menu open does nothing strange.
+        def opens():
+            return phone.evaluate("window.posts.filter((type) => type === 'open').length")
+        tools.tap()
+        phone.locator(".menu-tools").wait_for()
+        tools.tap()
+        phone.locator(".menu-tools").wait_for(state="detached")
+        assert opens() == 0
+        tools.tap()
+        phone.locator(".menu-tools").wait_for()
+        phone.locator(".note-card h3").first.tap()
+        phone.locator(".menu-tools").wait_for(state="detached")
+        assert opens() == 0, "a tap beside the menu must not open the note under it"
+        phone.locator(".note-card h3").first.tap()
+        phone.wait_for_function("window.posts.includes('open')")  # with no menu open a card still opens
+        phone.evaluate("window.posts.length = 0")
+        phone.locator(".note-card .card-actions button[aria-haspopup=menu]").first.tap()
+        phone.locator(".card-menu").wait_for()
+        phone.locator(".note-card h3").nth(1).tap()
+        phone.locator(".card-menu").wait_for(state="detached")
+        assert opens() == 0, "a tap beside the colour menu must not open a note either"
+        tools.tap()
+        phone.locator(".menu-tools").wait_for()
+        card_box = box(phone, ".note-card")
+        x, y = card_box["x"] + 30, card_box["y"] + card_box["height"] / 2
+        def drag_card():
+            phone.mouse.move(x, y)
+            phone.mouse.down()
+            phone.mouse.move(x, y + 300, steps=10)
+            phone.mouse.up()
+            phone.wait_for_timeout(200)
+        phone.evaluate("window.posts.length = 0")
+        drag_card()
+        assert opens() == 0, "dragging a card with a menu open must not open it"
+        assert phone.evaluate("window.posts.includes('setRanks')") is False, "a press outside an open menu must not pick the card up"
+        assert not phone.jd_errors, phone.jd_errors
+        # Without a menu the same drag still moves the card.
+        if phone.locator(".menu-tools").count():
+            phone.keyboard.press("Escape")
+            phone.locator(".menu-tools").wait_for(state="detached")
+        drag_card()
+        assert phone.evaluate("window.posts.includes('setRanks')"), "the card drag itself still works"
+        assert not phone.jd_errors, phone.jd_errors
+        # The first card starts in the top 22% of an 800 px screen (it was ~49%, then ~31%, then one row of tools ~13%; the
+        # notebooks on a row of their own, as mrjo118 asked, cost one more row).
         first = box(phone, ".note-card")["y"]
-        assert first < 0.2 * 800, first
+        assert first < 0.22 * 800, first
         # Tapping the box opens the title and the save bar; Close puts it back.
         phone.locator(".jd-c-body").tap()
         phone.locator(".jd-c-title").wait_for(state="visible")
@@ -128,6 +179,27 @@ def main():
         phone.locator(".jd-search").fill("")
         phone.wait_for_function("document.querySelector('.jd-search').placeholder === 'Search 54 notes'")
         phone.context.close()
+
+        # The placeholder fits in the search box with room to spare (forum 51337: its last letter was cut off), on the
+        # narrowest and the widest phones, in English and Dutch, and with a count of five digits.
+        def placeholder_room(page):
+            return page.evaluate("""async () => {
+              await document.fonts.ready;
+              const el = document.querySelector('.jd-search');
+              const style = getComputedStyle(el);
+              const context = document.createElement('canvas').getContext('2d');
+              context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+              const text = context.measureText(el.placeholder).width;
+              const room = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+              return { text, room };
+            }""")
+        for width in [320, 360, 393, 412]:
+            for locale in ["en", "nl"]:
+                page = open_board(browser, width, "mobile", locale)
+                page.evaluate("document.querySelector('.jd-search').placeholder = document.querySelector('.jd-search').placeholder.replace('54', '12345')")
+                size = placeholder_room(page)
+                assert size["text"] + 8 <= size["room"], f"placeholder cut off at {width} px ({locale}): {size}"
+                page.context.close()
 
         # Dutch, and an empty board does not say "Search 0 notes".
         dutch = open_board(browser, 393, "mobile", "nl")

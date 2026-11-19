@@ -157,6 +157,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .jd-tags:empty { display: none; }
   .jd-top { gap: 8px 12px; }
 }
+/* Upright, the notebooks get a row of their own under the search box and "More" (forum 51337, 18 Nov: a long notebook name
+   did not fit next to a narrow search box, and the placeholder lost its last letter). On its side a phone keeps one row. */
+@media (max-width: 599px) {
+  .jd-filters > * { order: 4; }
+  .jd-filters .jd-search { order: 1; }
+  .jd-filters .jd-tools-btn { order: 2; }
+  .jd-filters .jd-folder { order: 3; flex: 1 1 100%; }
+}
 .card-audio { display: block; width: 100%; height: 36px; margin: 2px 0 8px; }
 
 /* Drawing (shared editor in cloud-shared/drawing-editor.mjs) over the board: the paper is always white, like the saved picture. */
