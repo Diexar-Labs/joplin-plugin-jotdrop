@@ -42,6 +42,53 @@ def serve(route):
         route.fulfill(path=str(file), content_type=(mimetypes.guess_type(str(file))[0] or "application/octet-stream") + "; charset=utf-8")
 
 
+TOAST_GEOMETRY = """() => {
+  const toast = document.querySelector('.jd-toast');
+  const range = document.createRange();
+  range.selectNodeContents(toast.firstChild);  // the message text only, not the Undo button
+  const lines = range.getClientRects();
+  const undo = document.querySelector('.jd-toast-undo').getBoundingClientRect();
+  const box = toast.getBoundingClientRect();
+  return {lines: lines.length, textTop: lines[0].top, textBottom: lines[0].bottom, undoMid: (undo.top + undo.bottom) / 2,
+          left: box.left, right: box.right, width: box.width, viewport: innerWidth};
+}"""
+
+
+def check_toast_fits(browser, width, platform):
+    """Android showed "Note back on the board" with Undo under the text: a fixed box at left: 50% only had half the screen.
+    The message and Undo share one line when they fit, and a long message wraps inside the screen."""
+    cards = [{"id": f"n{i}", "title": f"Note {i}", "color": "default", "tags": [], "pinned": False, "archived": i == 0, "updated": 1, "rank": 1000 - i, "folderId": "f"} for i in range(2)]
+    data = {"locale": "en", "platform": platform, "cards": cards, "folders": [{"id": "f", "title": "Synthetic"}], "boardFolder": "f", "drawers": [], "scroll": None}
+    page = browser.new_context(viewport={"width": width, "height": 800}, has_touch=width < 600).new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.route("http://jotdrop.test/**", serve)
+    page.add_init_script(BRIDGE.replace("DATA", json.dumps(data)))
+    page.goto("http://jotdrop.test/", wait_until="networkidle")
+    if width < 600:  # on a phone the Archive chip is an item in the tools menu
+        page.locator(".jd-tools-btn").click()
+        page.locator(".menu-tools button", has_text="Archive").click()
+    else:
+        page.locator(".jd-archive").click()
+    note = page.locator(".note-card").first
+    note.wait_for()
+    note.hover()
+    note.get_by_role("button", name="Back to the board").click()
+    page.locator(".jd-toast").filter(has_text="Note back on the board").wait_for()
+    page.wait_for_timeout(400)  # the toast finishes sliding in
+    g = page.evaluate(TOAST_GEOMETRY)
+    assert g["lines"] == 1 and g["textTop"] - 1 <= g["undoMid"] <= g["textBottom"] + 1, f"{width}px: Undo is not on the text's line: {g}"
+    assert g["left"] >= 0 and g["right"] <= g["viewport"], f"{width}px: the toast leaves the screen: {g}"
+
+    page.evaluate("document.querySelector('.jd-toast').firstChild.nodeValue = 'A message that is far too long for one line, so it has to wrap inside the screen instead of running past its edge, even with an Undo button next to it.'")
+    g = page.evaluate(TOAST_GEOMETRY)
+    assert g["lines"] > 1, f"{width}px: the long message should wrap: {g}"
+    assert g["left"] >= 0 and g["right"] <= g["viewport"] and g["width"] <= min(0.9 * g["viewport"], 460) + 1, f"{width}px: a long toast leaves its width limit: {g}"
+    assert page.locator(".jd-toast-undo").is_visible()
+    assert not errors, errors
+    page.context.close()
+
+
 def main():
     cards = [{"id": f"n{i}", "title": f"Note {i}", "color": "default", "tags": [], "pinned": False, "archived": False, "updated": 1, "rank": 1000 - i, "folderId": "f"} for i in range(3)]
     data = {"locale": "en", "platform": "desktop", "cards": cards, "folders": [{"id": "f", "title": "Synthetic"}], "boardFolder": "f", "drawers": [], "scroll": None}
@@ -137,6 +184,10 @@ def main():
         assert body.evaluate("el => el.style.height") == "240px", "moving to the title does not reset it"
         page.keyboard.press("Escape")
         assert body.evaluate("el => el.style.height") == "", "Escape closes the box in one line too"
+
+        # The toast on a phone (412 px) and on the desktop: Undo on the same line as the text, and inside the screen.
+        check_toast_fits(browser, 412, "mobile")
+        check_toast_fits(browser, 1280, "desktop")
 
         assert not errors, errors
         browser.close()
