@@ -6,6 +6,7 @@ import { isDrawingName } from './cloud-shared/drawing.mjs';
 import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-shared/paper.mjs';
 import { tickEdit } from './cloud-shared/format.mjs';
 import { boardRank } from './board/order.js';
+import { isAdvancedSearch } from './board/search.js';
 import { fileChip, resourceLinks } from './fileChips.mjs';
 import { aiFileKinds, registerAiSettings, setupAsk } from './ai';
 
@@ -33,6 +34,11 @@ let platform = 'desktop';
 let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
+// The search, notebook, tag and archive filters the board had when a card was opened (forum 51337, 20 Nov): they come back with it.
+let boardView: { query: string; folderId: string; tag: string; paper: string; archive: boolean } | null = null;
+const cleanView = (view: any) => view && typeof view === 'object'
+	? { query: String(view.query || ''), folderId: String(view.folderId || ''), tag: String(view.tag || ''), paper: String(view.paper || ''), archive: view.archive === true }
+	: null;
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -122,6 +128,7 @@ function toMeta(note: any, tags: string[], editedToTop: boolean) {
 		title: note.title || '',
 		isTodo: !!note.is_todo,
 		done: !!note.todo_completed,
+		madeTodo: meta.madeTodo === true,
 		due: note.todo_due || 0,
 		updated: note.updated_time,
 		rank: boardRank({ created: note.user_created_time, edited: note.user_updated_time, rank: meta.rank, rankAt: rankTime(note.user_data) }, editedToTop),
@@ -207,11 +214,13 @@ async function loadBoard() {
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
 		.map((note) => toMeta(note, tags.get(note.id) || [], editedToTop));
-	return { cards, scroll: boardScroll, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
+	return { cards, scroll: boardScroll, view: boardView, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
 async function searchNotes(text: string) {
+	// Joplin's search language (title:, tag:, iscompleted:, "a phrase", -word) goes to Joplin as typed.
+	if (isAdvancedSearch(text)) return (await allPages(['search'], { query: String(text).trim(), type: 'note', fields: ['id'] })).map((note) => note.id);
 	const words = String(text).replace(/[":*()\-]/g, ' ').split(/\s+/).filter(Boolean);
 	if (!words.length) return [];
 	const found = await allPages(['search'], { query: words.map((word) => `${word}*`).join(' '), type: 'note', fields: ['id'] });
@@ -382,6 +391,7 @@ async function answer(message: any) {
 	case 'search': return searchNotes(message.text);
 	case 'open':
 		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
+		boardView = cleanView(message.view);
 		await joplin.commands.execute('openNote', message.id);
 		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
@@ -403,6 +413,13 @@ async function answer(message: any) {
 		for (const { id, rank } of message.ranks) await joplin.data.userDataSet(ModelType.Note, id, 'rank', Number(rank));
 		return true;
 	case 'setReminder': return setReminder(message.id, Number(message.due) || 0);
+	// The box of a to-do on its card: Joplin's own done time, and the card keeps its place (the edit time stays).
+	case 'toggleTodo': {
+		const note = await joplin.data.get(['notes', message.id], { fields: ['is_todo'] });
+		if (!note.is_todo) throw new Error('This note is not a to-do any more.');
+		await joplin.data.put(['notes', message.id], null, { todo_completed: message.done ? Date.now() : 0, ...await keepEditTime(message.id) });
+		return cardFor(message.id);
+	}
 	case 'setColor':
 		if (COLORS.has(message.color)) await joplin.data.userDataSet(ModelType.Note, message.id, 'color', message.color);
 		else await joplin.data.userDataDelete(ModelType.Note, message.id, 'color');
@@ -483,6 +500,8 @@ async function boardFolderForNewBoard() {
 }
 
 async function openBoard(create: boolean) {
+	// Opened on purpose (the puzzle button, the toolbar, startup): a fresh board. Only the way back from a note keeps its filters.
+	boardView = null;
 	let id = await findBoardNoteId();
 	if (!id) {
 		if (!create) return;

@@ -6,7 +6,7 @@
 const mobile = () => document.documentElement.dataset.platform === 'mobile';
 const here = () => (mobile() ? 'this phone' : 'this computer');
 
-export function createDuplicates({ h, post, openAsk }) {
+export function createDuplicates({ h, post, openAsk, where = () => '' }) {
   let overlay = null;
 
   function close() {
@@ -28,7 +28,8 @@ export function createDuplicates({ h, post, openAsk }) {
     me.addEventListener('click', (e) => e.stopPropagation());
     document.body.append(me);
 
-    const when = (note) => (note.updatedAt ? `edited ${new Date(note.updatedAt).toLocaleDateString()}` : 'no edit date');
+    // Two duplicates often have the same name, so the notebook with its parents says which is which (forum 51337, 20 Nov).
+    const when = (note) => `${where(note.id) ? `in ${where(note.id)}, ` : ''}${note.updatedAt ? `edited ${new Date(note.updatedAt).toLocaleDateString()}` : 'no edit date'}`;
 
     async function showCompare(box, pair) {
       let shown;
