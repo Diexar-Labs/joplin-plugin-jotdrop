@@ -1191,6 +1191,11 @@ async function showShare(anchor, c) {
   try { info = await post({ type: 'shareInfo', id: c.id }); } catch { if (openMenu === menu) closeMenu(); toast(t.failed); return; }
   if (openMenu !== menu) return;
   menu.replaceChildren();
+  if (info.problem) {
+    menu.append(h('p', { class: 'menu-note', text: info.problem }));
+    placeMenu(menu, anchor);
+    return;
+  }
   if (!info.connected) {
     menu.append(h('p', { class: 'menu-note', text: t.connectFirst }),
       h('button', { type: 'button', class: 'menu-set', onclick: () => { closeMenu(); els.cloud.click(); } }, t.cloudOff));

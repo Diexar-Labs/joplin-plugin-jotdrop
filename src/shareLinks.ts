@@ -4,6 +4,7 @@ import { CloudClient } from './cloud-shared/client.mjs';
 import { createLink, listLinks, removeLink } from './cloud-shared/links.mjs';
 import { createListLink, hasChecklist, listListLinks, openList, removeListLink } from './cloud-shared/list-links.mjs';
 import { checkLink, copyText, joplinPath, lastMarks, noteIdOf, tooLarge } from './shareLink.mjs';
+import { PAUSED } from './paused';
 
 // A note shared by link, from the board on Joplin desktop with JotDrop Cloud connected: a copy anyone can read, or a
 // live list anyone can tick. Only a note you share this way goes to the cloud, sealed with a key that is only in the link.
@@ -22,6 +23,7 @@ const STRINGS = {
 		connectFirst: 'Connect JotDrop Cloud first.',
 		plus: 'You can try JotDrop Plus free for 14 days on the website.',
 		failed: 'Something went wrong. Try again.',
+		paused: PAUSED.en,
 	},
 	nl: {
 		ended: (title: string) => `De live lijstlink van "${title}" is gestopt, want de notitie staat in de prullenbak.`,
@@ -31,6 +33,7 @@ const STRINGS = {
 		connectFirst: 'Koppel eerst JotDrop Cloud.',
 		plus: 'Op de website kun je JotDrop Plus 14 dagen gratis proberen.',
 		failed: 'Er ging iets mis. Probeer het nog eens.',
+		paused: PAUSED.nl,
 	},
 };
 const text = async () => STRINGS[String(await joplin.settings.globalValue('locale') || 'en').slice(0, 2)] || STRINGS.en;
@@ -98,7 +101,7 @@ export function checkListLinks(): Promise<boolean> {
 }
 
 function problem(error: any, t: typeof STRINGS.en, url: string) {
-	const message = error instanceof Error && error.message ? error.message : t.failed;
+	const message = error?.code === 'device-paused' ? t.paused : error instanceof Error && error.message ? error.message : t.failed;
 	return error?.code === 'plus-required' ? { problem: `${message} ${t.plus}`, plusUrl: url } : { problem: message };
 }
 
@@ -107,7 +110,14 @@ export async function shareInfo(id: string) {
 	const cloud = await client();
 	if (!cloud) return { connected: false };
 	const note = id ? await getNote(id) : null;
-	const [copies, found] = await Promise.all([listLinks(cloud), listListLinks(cloud) as Promise<ListLink[]>]);
+	let copies: any[], found: ListLink[];
+	try {
+		[copies, found] = await Promise.all([listLinks(cloud), listListLinks(cloud) as Promise<ListLink[]>]);
+	} catch (error) {
+		// Sync is on hold on this device: say so in the menu, with the same words as the cloud window.
+		if ((error as any)?.code === 'device-paused') return { connected: true, problem: (await text()).paused, links: [], lists: [] };
+		throw error;
+	}
 	remember(found);
 	const shown = await Promise.all(found.map(async (link) => {
 		const noteId = noteIdOf(link.path);
