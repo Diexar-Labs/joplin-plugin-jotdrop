@@ -5,6 +5,7 @@ import manifest from './manifest.json';
 import { noteSummary } from './cloud-shared/note.mjs';
 import { validExpires } from './cloud-shared/paper.mjs';
 import { remoteFiles } from './cloud-shared/sync.mjs';
+import { PAUSED } from './paused';
 import { checkListLinks, forgetListLinks } from './shareLinks';
 import { baseline, createdTime, followMoves, isCloudNote, linkAttachments, stableId, titleAndBody, wantedTags } from './cloudNote.mjs';
 
@@ -16,6 +17,8 @@ import { baseline, createdTime, followMoves, isCloudNote, linkAttachments, stabl
 const COLORS = new Set(['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'brown', 'gray']);
 const EVERY = 30 * 1000;
 const LONGEST_WAIT = 5 * 60 * 1000;
+// While the server holds sync on this device the next look is this far away; Check now still looks at once.
+const PAUSED_EVERY = 30 * 60 * 1000;
 const SAVE_EVERY = 1000;
 
 const STRINGS = {
@@ -53,6 +56,7 @@ const STRINGS = {
 		failed: 'JotDrop Cloud did not answer as expected. Try again later.',
 		someFailed: (n: number) => (n === 1 ? '1 note could not come in yet. JotDrop tries again by itself.' : `${n} notes could not come in yet. JotDrop tries again by itself.`),
 		removed: 'This Joplin was removed from your JotDrop Cloud. Connect again with a new pairing code.',
+		paused: PAUSED.en,
 	},
 	nl: {
 		title: 'JotDrop Cloud koppelen',
@@ -88,6 +92,7 @@ const STRINGS = {
 		failed: 'JotDrop Cloud gaf geen geldig antwoord. Probeer het later opnieuw.',
 		someFailed: (n: number) => (n === 1 ? '1 notitie kon nog niet binnenkomen. JotDrop probeert het vanzelf opnieuw.' : `${n} notities konden nog niet binnenkomen. JotDrop probeert het vanzelf opnieuw.`),
 		removed: 'Deze Joplin is uit je JotDrop Cloud gehaald. Koppel opnieuw met een nieuwe koppelcode.',
+		paused: PAUSED.nl,
 	},
 };
 type Text = typeof STRINGS.en;
@@ -142,6 +147,7 @@ const status = { done: 0, total: 0, lastCheck: 0, problem: '', brought: 0 };
 
 function problemFor(error: any, t: Text) {
 	if (error?.code === 'device-limit') return t.deviceLimit;
+	if (error?.code === 'device-paused') return t.paused;
 	if (error?.status === 429) return t.tooMany;
 	if (error instanceof CloudError) return t.failed;
 	if (error instanceof TypeError || error?.name === 'TimeoutError' || error?.name === 'AbortError') return t.offline;
@@ -300,6 +306,8 @@ function pullCloud() {
 				status.problem = t.removed;
 			} else {
 				status.problem = problemFor(error, t);
+				// Not a fault: the plan syncs other devices. One quiet wait, not the growing waits after failures.
+				if ((error as any)?.code === 'device-paused') { failures = 0; nextCheck = Date.now() + PAUSED_EVERY; }
 			}
 			throw error;
 		}
@@ -323,7 +331,7 @@ export function startCloud(inbox: () => Promise<string>, changed: () => Promise<
 			if (notesChanged) await changed();
 			if (result.failed) failures++;
 		} catch (error) {
-			failures++;
+			if ((error as any)?.code !== 'device-paused') failures++;
 			console.warn('JotDrop Cloud:', error);
 			await changed().catch(() => {});
 		}
