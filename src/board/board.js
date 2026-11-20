@@ -7,6 +7,7 @@ import { createDrawingEditor } from '../cloud-shared/drawing-editor.mjs';
 import { DEFAULT_WARN, INTRO, PAPER_DRAWER, WARN_OPTIONS, drawerName, expiresBadge, inDrawer, isPaperDrawer, shortDate } from '../cloud-shared/paper.mjs';
 import { createAsk } from './ask.js';
 import { createDuplicates } from './duplicates.js';
+import { isAdvancedSearch } from './search.js';
 import { sizeText } from '../fileChips.mjs';
 
 const PAGE = 60;
@@ -16,6 +17,8 @@ const STRINGS = {
     tableMore: (columns, rows) => [columns ? `+ ${columns} ${columns === 1 ? 'column' : 'columns'}` : '', rows ? `+ ${rows} ${rows === 1 ? 'row' : 'rows'}` : ''].filter(Boolean).join(' · '),
     checkedItems: (n) => `+ ${n} checked ${n === 1 ? 'item' : 'items'}`, openNote: (n) => n ? `Open note - ${n} more ${n === 1 ? 'task' : 'tasks'}` : 'Open note',
     search: 'Search your notes', searchIn: (n) => `Search ${n === 1 ? '1 note' : `${n} notes`}`, allNotebooks: 'All notebooks', allTags: 'All', takeNote: 'Take a note…', title: 'Title',
+    clearSearch: 'Clear search', showMoreTags: (n) => `Show ${n} more ${n === 1 ? 'tag' : 'tags'}`, showFewerTags: 'Show fewer tags', fewerTags: 'Less', moreTagsOnCard: (names) => `More tags: ${names}`,
+    todoCheck: 'Mark to-do as done', todoUncheck: 'Mark to-do as not done',
     close: 'Close', savesTo: 'Saves to', pinned: 'Pinned', others: 'Others', pin: 'Pin', unpin: 'Unpin', color: 'Color',
     noNotes: 'No notes yet. Take your first note above.', noMatch: 'No notes match.', empty: 'Empty note',
     changed: 'This checklist changed in the meantime. The board shows the latest version again.', failed: 'That did not work. Please try again.',
@@ -50,6 +53,8 @@ const STRINGS = {
     tableMore: (columns, rows) => [columns ? `+ ${columns} ${columns === 1 ? 'kolom' : 'kolommen'}` : '', rows ? `+ ${rows} ${rows === 1 ? 'rij' : 'rijen'}` : ''].filter(Boolean).join(' · '),
     checkedItems: (n) => `+ ${n} ${n === 1 ? 'afgevinkt item' : 'afgevinkte items'}`, openNote: (n) => n ? `Open notitie - nog ${n} ${n === 1 ? 'taak' : 'taken'}` : 'Open notitie',
     search: 'Zoek in je notities', searchIn: (n) => `Zoek in ${n === 1 ? '1 notitie' : `${n} notities`}`, allNotebooks: 'Alle notitieboeken', allTags: 'Alles', takeNote: 'Maak een notitie…', title: 'Titel',
+    clearSearch: 'Zoekopdracht wissen', showMoreTags: (n) => `Toon nog ${n} ${n === 1 ? 'label' : 'labels'}`, showFewerTags: 'Toon minder labels', fewerTags: 'Minder', moreTagsOnCard: (names) => `Meer labels: ${names}`,
+    todoCheck: 'Taak als klaar markeren', todoUncheck: 'Taak als niet klaar markeren',
     close: 'Sluiten', savesTo: 'Komt in', pinned: 'Vastgezet', others: 'Overige', pin: 'Vastzetten', unpin: 'Losmaken', color: 'Kleur',
     noNotes: 'Nog geen notities. Maak hierboven je eerste notitie.', noMatch: 'Geen notities gevonden.', empty: 'Lege notitie',
     changed: 'Deze checklist is intussen veranderd. Het bord toont weer de nieuwste versie.', failed: 'Dat lukte niet. Probeer het nog eens.',
@@ -124,6 +129,7 @@ let restore = null;
 const previews = new Map();
 // The task just ticked on a card stays a moment as ☑, then joins "+ N checked items" (like Keep).
 const TICK_SHOWN_MS = 400;
+const MAX_TAG_CHIPS = 4;
 let justTicked;
 const cardPreviews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
@@ -191,7 +197,20 @@ async function post(message) {
 // Ask JotDrop runs in the plugin's main process; this page shows its window (ask.js).
 const askJotDrop = createAsk({ h, post, toast, openCard, fileIcon: (kind) => icon(ASK_FILE_ICONS[kind] || FILE_ICONS.file) });
 // Find duplicates compares on this device; "Merge with AI" hands the pair to the Ask window.
-const duplicates = createDuplicates({ h, post, openAsk: (options) => askJotDrop.open(options) });
+const duplicates = createDuplicates({ h, post, openAsk: (options) => askJotDrop.open(options), where: (id) => notebookPath(id) });
+
+// "Work › Projects": the notebook a note is in, with its parents. A note the board does not hold (the trash) has no path.
+function notebookPath(noteId) {
+  const card = state.cards.find((c) => c.id === noteId);
+  const names = [];
+  for (let id = card && card.folderId, guard = 0; id && guard < 20; guard += 1) {
+    const folder = state.folders.find((f) => f.id === id);
+    if (!folder) break;
+    names.unshift(folder.title);
+    id = folder.parent_id;
+  }
+  return names.join(' › ');
+}
 
 // A toast with an Undo button stays longer: a thumb needs time to find it (forum 51337, 19 Nov).
 function toast(text, undo) {
@@ -244,7 +263,15 @@ async function load() {
     t = STRINGS[String(data.locale).slice(0, 2)] || STRINGS.en;
     locale = String(data.locale).replace('_', '-');
     document.documentElement.dataset.platform = data.platform;
+    // Coming back from a note: the search, notebook, tag and archive filters are as they were (forum 51337, 20 Nov).
+    // A notebook that is gone is dropped; the drawer, tag and search follow the notes that are there.
+    if (data.view) {
+      Object.assign(state, { query: data.view.query, tag: data.view.tag, paper: data.view.paper, archive: data.view.archive });
+      if ((data.folders || []).some((f) => f.id === data.view.folderId)) state.folderId = data.view.folderId;
+    }
     buildShell();
+    els.search.value = state.query;
+    syncSearchClear();
   }
   applyTheme();
   state.cloud = data.cloud;
@@ -322,7 +349,9 @@ function visibleCards() {
   const q = state.query.trim().toLowerCase();
   return inFolder().filter((c) => (!state.tag || c.tags.includes(state.tag))
     && (!state.paper || inDrawer(c.tags, state.paper))
-    && (!q || (state.found && state.found.has(c.id)) || `${c.title}\n${(previews.get(c.id) || {}).body || ''}\n${c.tags.join(' ')}`.toLowerCase().includes(q)));
+    && (!q || (state.found && state.found.has(c.id))
+      // Joplin's own search language is answered by Joplin alone: the words of "title:tax" are no text to match here.
+      || (!isAdvancedSearch(q) && `${c.title}\n${(previews.get(c.id) || {}).body || ''}\n${c.tags.join(' ')}`.toLowerCase().includes(q))));
 }
 
 // Title, tags and fetched text match at once; Joplin's index adds the notes the board has not fetched.
@@ -344,6 +373,10 @@ function runSearch() {
   }, 200);
 }
 
+function syncSearchClear() {
+  if (els) els.searchClear.classList.toggle('is-shown', els.search.value !== '');
+}
+
 function renderSearchHint() {
   if (els) els.search.placeholder = narrow && narrow.matches && noteCount ? t.searchIn(noteCount) : t.search;
 }
@@ -356,7 +389,12 @@ function folderName(id) {
 
 function buildShell() {
   const search = h('input', { type: 'search', class: 'jd-search', placeholder: t.search, 'aria-label': t.search,
-    oninput: (e) => { state.query = e.target.value; state.found = null; runSearch(); } });
+    oninput: (e) => { state.query = e.target.value; if (!isAdvancedSearch(state.query)) state.found = null; syncSearchClear(); runSearch(); } });
+  // The browser's own clear cross only shows while the box has focus (forum 51337, 20 Nov), so the box has its own: it stays
+  // while there is text, and it is a shape and a label, not only a colour.
+  const searchClear = h('button', { type: 'button', class: 'jd-search-clear', title: t.clearSearch, 'aria-label': t.clearSearch,
+    onclick: () => { search.value = ''; state.query = ''; state.found = null; syncSearchClear(); runSearch(); } }, '×');
+  const searchBox = h('div', { class: 'jd-searchbox' }, search, searchClear);
   const folder = h('select', { class: 'jd-folder', 'aria-label': t.allNotebooks,
     onchange: (e) => { state.folderId = e.target.value; state.tag = ''; renderAll(true); } });
   const archive = h('button', { type: 'button', class: 'jd-chip jd-archive', 'aria-pressed': 'false', onclick: toggleArchive });
@@ -370,7 +408,7 @@ function buildShell() {
     } });
   // Drawing is for everyone (Eric, 2 Nov): a new drawing becomes a note with the picture in it, like on Android.
   // `jd-tool`, not `jd-draw`: that class is the whole drawing window's look (wide, padded, amber shadow).
-  const draw = h('button', { type: 'button', class: 'jd-chip jd-tool', title: t.newDrawing, 'aria-label': t.newDrawing, onclick: startDrawing }, icon(PENCIL), ` ${t.drawing}`);
+  const draw = canDraw() ? h('button', { type: 'button', class: 'jd-chip jd-tool', title: t.newDrawing, 'aria-label': t.newDrawing, onclick: startDrawing }, icon(PENCIL), ` ${t.drawing}`) : null;
   const askChip = h('button', { type: 'button', class: 'jd-chip jd-tool jd-ask-chip', title: t.askTitle, onclick: (e) => { e.stopPropagation(); askJotDrop.open(); } }, icon(SPARKLES), ` ${t.ask}`);
   const dupChip = h('button', { type: 'button', class: 'jd-chip jd-tool jd-dup-chip', title: t.dupTitle, onclick: (e) => { e.stopPropagation(); duplicates.open(); } }, icon(COPY), ` ${t.dup}`);
   // Last in the row. Hidden by board.css on a wide screen, where the chips above are all in view.
@@ -387,7 +425,7 @@ function buildShell() {
     onclick: () => scroller.scrollTo({ top: 0 }) }, '↑');
   const showToTop = () => toTop.classList.toggle('is-shown', scroller.scrollTop > window.innerHeight);
   window.addEventListener('scroll', showToTop, { passive: true });
-  els = { search, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
+  els = { search, searchClear, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   narrow = window.matchMedia('(max-width: 599px)');
   narrow.addEventListener('change', renderSearchHint);
   compact = window.matchMedia(COMPACT_QUERY);
@@ -395,9 +433,12 @@ function buildShell() {
   compact.addEventListener('change', () => { if (els && els.tags) renderTags(); });
   const top = h('header', { class: 'jd-top' },
     h('div', { class: 'jd-brand' }, h('span', { class: 'jd-word', text: 'JotDrop' }), count),
-    h('div', { class: 'jd-filters' }, search, folder, archive, draw, askChip, dupChip, cloud, tools));
+    h('div', { class: 'jd-filters' }, searchBox, folder, archive, draw, askChip, dupChip, cloud, tools));
   document.getElementById('jotdrop-root').replaceChildren(top, tags, buildComposer(), grid, more, toTop, toastEl);
   new ResizeObserver(() => { if (columnCount() !== columnsShown) renderGrid(); }).observe(grid);
+  // A turned phone or a resized window changes how many tags fit on the one line.
+  let tagsWidth = 0;
+  new ResizeObserver(() => { const width = tags.clientWidth; if (width !== tagsWidth) { tagsWidth = width; if (refitTags) refitTags(); } }).observe(tags);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
   // A tap outside an open menu only closes it: the card or button under the finger must not act as well (forum 51337, 18 Nov).
@@ -420,6 +461,11 @@ function toggleArchive() {
 }
 
 // Drawing is for everyone (Eric, 2 Nov): a new drawing becomes a note with the picture in it, like on Android.
+// Not on a phone (forum 51337, 20 Nov): Joplin on Android gives a plugin no way to make a picture file (the resource API wants
+// a file path), so a drawing could not be saved there, and Joplin has its own "Draw picture" on the phone. Before, the drawing
+// window opened, "Saving..." stayed on the screen for good and nothing was saved.
+const canDraw = () => document.documentElement.dataset.platform !== 'mobile';
+
 function startDrawing() {
   openDrawing(null, async (png) => {
     const card = await post({ type: 'saveDrawing', png, name: drawingFileName(), title: t.drawing, folderId: state.folderId });
@@ -446,7 +492,7 @@ function showTools(anchor) {
   icon(path), label, on ? h('span', { class: 'menu-check', text: '✓' }) : null);
   const menu = h('div', { class: 'card-menu menu-tools', role: 'menu', 'aria-label': t.tools },
     item(`${t.archiveView}${archived ? ` (${archived})` : ''}`, BOX, state.archive, toggleArchive),
-    item(t.drawing, PENCIL, null, startDrawing),
+    canDraw() ? item(t.drawing, PENCIL, null, startDrawing) : null,
     item(t.ask, SPARKLES, null, () => askJotDrop.open()),
     item(t.dup, COPY, null, () => duplicates.open()),
     item(`${t.paperDrawer}${papers ? ` (${papers})` : ''}`, TRAY, Boolean(state.paper), togglePaper));
@@ -592,13 +638,54 @@ function renderTags() {
   // Drawers have their own chips below, so they are not #tags as well.
   for (const c of inFolder()) for (const tag of c.tags) if (!isPaperDrawer(tag)) counts.set(tag, (counts.get(tag) || 0) + 1);
   const names = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([name]) => name);
-  if (state.tag && !names.includes(state.tag)) names.push(state.tag);
+  // The chosen tag leads, so the filter that is on never waits behind the "+N" of the one-line row.
+  if (state.tag) {
+    const at = names.indexOf(state.tag);
+    if (at >= 0) names.splice(at, 1);
+    names.unshift(state.tag);
+  }
   // The chosen chip carries a ✓ as well as its colour (colour-blind safe).
   const chip = (label, value) => {
     const on = state.tag === value;
     return h('button', { type: 'button', class: 'jd-chip', 'aria-pressed': String(on), onclick: () => { state.tag = value; renderAll(true); } }, on ? '✓ ' : '', label);
   };
-  els.tags.replaceChildren(...paperChips(), ...(names.length ? [chip(t.allTags, ''), ...names.map((n) => chip(`#${n}`, n))] : []));
+  const chips = [...paperChips(), ...(names.length ? [chip(t.allTags, ''), ...names.map((n) => chip(`#${n}`, n))] : [])];
+  if (!chips.length) { refitTags = null; return els.tags.replaceChildren(); }
+  const list = h('div', { class: 'jd-tags-list' }, chips);
+  const toggle = h('button', { type: 'button', class: 'jd-chip jd-tags-toggle', 'aria-expanded': 'false', onclick: () => { tagsOpen = !tagsOpen; renderTags(); } });
+  els.tags.replaceChildren(list, toggle);
+  refitTags = () => fitTags(list, toggle);
+  refitTags();
+}
+
+// The tag row is one line (forum 51337, 20 Nov: many tags filled the top of a phone). What does not fit on that line waits
+// behind a "+N" button, which opens the whole row and closes it again. Whole chips only: a cut chip would be unreadable.
+let tagsOpen = false;
+let refitTags = null;
+function fitTags(list, toggle) {
+  const chips = [...list.children];
+  list.classList.add('is-open');
+  list.style.removeProperty('--jd-row');
+  chips.forEach((chip) => chip.classList.remove('is-clipped'));
+  toggle.hidden = false;
+  toggle.textContent = '+99';
+  const first = chips[0].offsetTop;
+  const rest = chips.filter((chip) => chip.offsetTop > first + 2);
+  if (!rest.length) { toggle.hidden = true; return; }
+  const row = Math.max(...chips.filter((chip) => chip.offsetTop <= first + 2).map((chip) => chip.offsetHeight));
+  if (tagsOpen) {
+    toggle.textContent = t.fewerTags;
+    toggle.title = t.showFewerTags;
+    toggle.setAttribute('aria-label', t.showFewerTags);
+  } else {
+    list.classList.remove('is-open');
+    list.style.setProperty('--jd-row', `${row}px`);
+    rest.forEach((chip) => chip.classList.add('is-clipped'));
+    toggle.textContent = `+${rest.length}`;
+    toggle.title = t.showMoreTags(rest.length);
+    toggle.setAttribute('aria-label', t.showMoreTags(rest.length));
+  }
+  toggle.setAttribute('aria-expanded', String(tagsOpen));
 }
 
 // ---- paper drawer ----
@@ -817,7 +904,14 @@ function cardEl(c) {
     h('span', { class: 'card-tape', 'aria-hidden': 'true' }));
   card.style.setProperty('--tilt', tiltFor(c.id));
   if (shownNote.image) card.append(cover(shownNote.image));
-  if (c.title) card.append(h('h3', { text: c.title }));
+  // A to-do made in Joplin keeps its box in front of the title (forum 51337, 20 Nov); ☐/☑ are shapes, so it reads without colour.
+  // A note that only got a reminder from this board (it turns into a to-do behind the scenes) stays a plain card.
+  if (c.isTodo && !c.madeTodo && c.title) {
+    card.append(h('div', { class: `jd-todo-head${c.done ? ' is-done' : ''}` },
+      h('button', { type: 'button', class: 'jd-check', role: 'checkbox', 'aria-checked': String(c.done), 'aria-label': c.done ? t.todoUncheck : t.todoCheck,
+        text: c.done ? '☑' : '☐', onclick: (e) => { e.stopPropagation(); update({ type: 'toggleTodo', id: c.id, done: !c.done }); } }),
+      h('h3', { text: c.title })));
+  } else if (c.title) card.append(h('h3', { text: c.title }));
   if (shownNote.audio) card.append(h('audio', { class: 'card-audio', controls: true, preload: 'metadata', src: shownNote.audio }));
   if (lines.length) {
     const preview = h('div', { class: 'note-preview' });
@@ -844,10 +938,14 @@ function cardEl(c) {
   if (c.isTodo && c.due) card.append(dueBadge(c));
   // A word, not only an icon or a colour (colour-blind safe), like the website's mark.
   if (c.listLink) card.append(h('p', { class: 'card-reminder card-listlink', text: `🔗 ${t.liveBadge}` }));
+  // At most four #tags on a card, then "+N", like the website and the Obsidian plugin: many tags made the cards long (forum 51337, 20 Nov). The paper drawer chip always stays.
+  const plainTags = c.tags.filter((tag) => !isPaperDrawer(tag));
+  const hiddenTags = plainTags.slice(MAX_TAG_CHIPS).map((tag) => `#${tag}`);
   const chips = [
-    ...c.tags.map((tag) => (isPaperDrawer(tag)
+    ...c.tags.filter((tag) => isPaperDrawer(tag) || plainTags.indexOf(tag) < MAX_TAG_CHIPS).map((tag) => (isPaperDrawer(tag)
       ? h('span', { class: 'jd-tagchip jd-drawerchip' }, icon(TRAY), drawerShown(tag))
       : h('span', { class: 'jd-tagchip', text: `#${tag}` }))),
+    ...(hiddenTags.length ? [h('span', { class: 'jd-tagchip jd-tagmore', title: hiddenTags.join(' '), 'aria-label': t.moreTagsOnCard(hiddenTags.join(' ')), text: `+${hiddenTags.length}` })] : []),
     ...urls.map((url) => h('a', { class: 'link-chip', href: url, title: url,
       onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openUrl', url }).catch(() => toast(t.failed)); } }, icon(LINK), urlHost(url))),
   ];
@@ -855,7 +953,7 @@ function cardEl(c) {
   card.append(
     h('button', { type: 'button', class: 'card-pin', 'aria-pressed': String(c.pinned), title: c.pinned ? t.unpin : t.pin, 'aria-label': c.pinned ? t.unpin : t.pin,
       onclick: (e) => { e.stopPropagation(); undoable(c, 'setPinned', 'pinned', c.pinned ? t.unpinnedNote : t.pinnedNote); } }, icon(PIN, c.pinned)),
-    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), askButton(c, shownNote.askFiles), archiveButton(c), shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
+    h('div', { class: 'card-actions' }, colorButton(c), reminderButton(c), paperButton(c), shareButton(c), askButton(c, shownNote.askFiles), archiveButton(c), canDraw() && shownNote.image && shownNote.image.drawing ? drawButton(c, shownNote.image) : null));
   card.addEventListener('click', (e) => {
     if (swallowClick || e.target.closest('button, a, input, audio, .card-menu')) return;
     openCard(c.id);
@@ -866,14 +964,14 @@ function cardEl(c) {
   return card;
 }
 
-// The board remembers where it was, so coming back from the note lands on the same card. A filter or search is
-// not kept when the board reopens, so only the plain board's place is worth remembering.
+// The board remembers where it was, so coming back from the note lands on the same card, with the same search,
+// notebook, tag and archive filters (forum 51337, 20 Nov: they were reset).
 function openCard(id) {
-  const plain = !state.query.trim() && !state.folderId && !state.tag && !state.paper && !state.archive;
-  const y = plain ? (document.scrollingElement || document.documentElement).scrollTop : 0;
+  const y = (document.scrollingElement || document.documentElement).scrollTop;
   const card = els.grid.querySelector(`[data-id="${id}"]`);
   const top = card ? card.getBoundingClientRect().top : 0;
-  post({ type: 'open', id, y, top, shown }).catch(() => toast(t.failed));
+  const view = { query: state.query, folderId: state.folderId, tag: state.tag, paper: state.paper, archive: state.archive };
+  post({ type: 'open', id, y, top, shown, view }).catch(() => toast(t.failed));
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.

@@ -17,10 +17,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-count { margin: 0; font-family: "Caveat", cursive; font-weight: 600; font-size: 1.3rem; color: var(--hand); transform: rotate(-2deg); }
 .jd-filters { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 320px; justify-content: flex-end; }
 .jd-search, .jd-folder { min-width: 0; padding: 7px 12px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); }
-.jd-search { flex: 1 1 200px; max-width: 360px; }
+.jd-searchbox { position: relative; display: flex; flex: 1 1 200px; min-width: 0; max-width: 360px; }
+.jd-search { flex: 1 1 auto; width: 100%; padding-right: 34px; }
+/* The browser's own clear cross only shows with focus (forum 51337, 20 Nov): ours stays while there is text. */
+.jd-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.jd-search-clear { display: none; position: absolute; right: 4px; top: 50%; translate: 0 -50%; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer; font-size: 1.3rem; line-height: 1; opacity: .8; }
+.jd-search-clear.is-shown { display: inline-flex; align-items: center; justify-content: center; }
 .jd-folder { flex: 0 1 220px; }
 
-.jd-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.jd-tags { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 14px; }
+/* One line of chips; what does not fit waits behind the "+N" button (board.js fitTags). */
+.jd-tags-list { position: relative; display: flex; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; gap: 6px; }
+.jd-tags-list:not(.is-open) { max-height: var(--jd-row, none); overflow: hidden; }
+.jd-tags-list .is-clipped { visibility: hidden; }
+.jd-tags-toggle { flex: none; font-weight: 600; }
+.jd-tags-toggle[hidden] { display: none; }
 .jd-chip { padding: 3px 11px; border: 1.5px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; font-size: .85rem; }
 .jd-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 
@@ -63,6 +74,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :is(.note-card, .swatch).note-gray { --note: light-dark(#e8ebef, #33383f); }
 
 .card-cover { display: block; width: calc(100% + 30px); max-height: 220px; margin: -14px -15px 10px; object-fit: cover; border-radius: 10px 10px 0 0; }
+.jd-todo-head { display: flex; align-items: flex-start; gap: 4px; }
+.jd-todo-head h3 { flex: 1 1 auto; min-width: 0; }
+.jd-todo-head .jd-check { margin-top: -2px; }
+.jd-todo-head.is-done h3 { text-decoration: line-through; color: var(--muted); }
+.jd-tagmore { font-weight: 600; }
 .note-card h3 { margin: 0 0 6px; padding-right: 26px; font-family: var(--heading); font-size: 1.04rem; font-weight: 700; letter-spacing: -.01em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .note-preview { overflow: hidden; font-size: .93rem; }
 .jd-line { white-space: pre-wrap; min-height: 1.2em; }
@@ -132,7 +148,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* On a phone a card shows a Keep-sized peek of the note, not the whole note. */
 :root[data-platform="mobile"] body { font-size: 14px; }
 :root[data-platform="mobile"] .card-cover { max-height: 150px; }
-@media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-search { max-width: none; } }
+@media (max-width: 599px) { #jotdrop-root { padding: 10px 10px 40px; } .jd-cols, .jd-col { gap: 10px; } .jd-filters { justify-content: stretch; } .jd-searchbox { max-width: none; } }
 /* Less room above the first card on a narrow screen (forum 49904): Joplin already shows the note title "JotDrop", so our own
    "JotDrop" word goes, and the note count lives in the search box (renderSearchHint). The closed note box is one low line. */
 .jd-compose:not(.is-open) .jd-c-body { resize: none; }
@@ -155,7 +171,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (max-width: 599px), (max-height: 520px) {
   .jd-filters .jd-tools-btn { display: inline-flex; }
   .jd-filters .jd-chip.jd-tool, .jd-filters .jd-chip.jd-archive:not([aria-pressed="true"]) { display: none; }
-  .jd-search { flex: 1 1 110px; max-width: none; }
+  .jd-searchbox { flex: 1 1 110px; max-width: none; }
   .jd-folder { flex: 0 1 150px; }
   .jd-tags:empty { display: none; }
   .jd-top { gap: 8px 12px; }
@@ -164,7 +180,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
    did not fit next to a narrow search box, and the placeholder lost its last letter). On its side a phone keeps one row. */
 @media (max-width: 599px) {
   .jd-filters > * { order: 4; }
-  .jd-filters .jd-search { order: 1; }
+  .jd-filters .jd-searchbox { order: 1; }
   .jd-filters .jd-tools-btn { order: 2; }
   .jd-filters .jd-folder { order: 3; flex: 1 1 100%; }
 }

@@ -68,7 +68,7 @@ def main():
         assert not phone.locator(".jd-c-title").is_visible()
         assert box(phone, ".jd-compose")["height"] < 46, box(phone, ".jd-compose")
         # Two top rows (forum 51337, 18 Nov): search and the "More" button, and under them the notebooks on a row of their own;
-        # Archive, Drawing, Ask JotDrop, Find duplicates and the Paper drawer are in the menu.
+        # Archive, Ask JotDrop, Find duplicates and the Paper drawer are in the menu (no Drawing on a phone: forum 51337, 20 Nov).
         for hidden in ["Drawing", "Ask JotDrop", "Find duplicates", "Archive", "Paper drawer"]:
             assert not phone.locator(".jd-filters button, .jd-tags button", has_text=hidden).first.is_visible(), hidden
         tools = phone.locator(".jd-tools-btn")
@@ -80,13 +80,13 @@ def main():
         assert folder_box["width"] > 393 - 40, f"the notebooks take the whole row: {folder_box}"
         assert tools.bounding_box()["width"] >= 36 and tools.bounding_box()["height"] >= 30, tools.bounding_box()
         assert phone.locator(".jd-tags").evaluate("el => el.children.length === 0 && getComputedStyle(el).display") == "none", "an empty tag row takes no room, not even its margin"
-        # The menu: five items, none switched on, Esc closes it.
+        # The menu: four items, none switched on, Esc closes it.
         tools.tap()
         menu = phone.locator(".menu-tools")
         menu.wait_for()
         names = [text.strip() for text in menu.locator("button").all_inner_texts()]
-        assert names == ["Archive", "Drawing", "Ask JotDrop", "Find duplicates", "Paper drawer"], names
-        assert [b.get_attribute("aria-checked") for b in menu.locator("button").all()] == ["false", None, None, None, "false"]
+        assert names == ["Archive", "Ask JotDrop", "Find duplicates", "Paper drawer"], names
+        assert [b.get_attribute("aria-checked") for b in menu.locator("button").all()] == ["false", None, None, "false"]
         phone.keyboard.press("Escape")
         menu.wait_for(state="detached")
         # Archive on: the item says so, and the Archive chip shows up with its ✓ so the state is not only in the menu.
@@ -109,11 +109,6 @@ def main():
         assert phone.locator(".menu-tools button", has_text="Paper drawer").get_attribute("aria-checked") == "true"
         phone.locator(".menu-tools button", has_text="Paper drawer").tap()
         phone.locator(".jd-paper-chip").first.wait_for(state="detached")
-        # Drawing and Ask JotDrop from the menu open their windows.
-        tools.tap()
-        phone.locator(".menu-tools button", has_text="Drawing").tap()
-        phone.locator(".jd-draw-overlay").wait_for()
-        phone.locator(".jd-draw-overlay").evaluate("el => el.remove()")
         # Find duplicates from the menu opens its window too (and Close shuts it).
         tools.tap()
         phone.locator(".menu-tools button", has_text="Find duplicates").tap()
