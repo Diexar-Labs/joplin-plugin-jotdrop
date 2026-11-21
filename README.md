@@ -167,7 +167,7 @@ The button then shows **✓ Cloud**. Click it to see how it is going, to check r
 - **Desktop does the fetching, while Joplin is open.** It looks every 30 seconds. Notes made while Joplin is closed come in after you open it. On Joplin for Android you see them through Joplin's own sync; connecting from Android itself is not possible.
 - **Connect one computer.** Joplin's own sync takes the notes to your other devices. A second connected computer makes no duplicate notes, but if both bring in the same photo before they sync, Joplin can add a note called "Attachment conflict".
 - **Encryption ends at your Joplin.** On the way through JotDrop Cloud a note is end-to-end encrypted. Once it is a Joplin note, Joplin's settings apply: its own end-to-end encryption is optional and off by default, so turn it on if your sync target should not read your notes.
-- **Joplin counts as a device.** The free plan has 2: your phone and one Joplin. Attachments follow your plan's file size. See [the plans](#jotdrop-cloud).
+- **Joplin counts as a device.** The free plan syncs 2: your phone and one Joplin. If your plan syncs fewer devices than you have signed in and this Joplin is not one of them, it goes on hold. The cloud button then shows "⚠ Cloud" with the reason, no new notes come in, and the notes already in Joplin stay. Choose your devices in the JotDrop app or on app.jotdrop.net, under Devices. Joplin checks again every 30 minutes, or when you press **Check now**. Attachments follow your plan's file size. See [the plans](#jotdrop-cloud).
 - **Repeating reminders** come in with their first date only.
 - **Archive and trash** in the app stay out of Joplin.
 
@@ -259,7 +259,7 @@ The optional, end-to-end encrypted sync for the JotDrop app, the Obsidian plugin
 | | **Free** | **Plus** |
 | --- | --- | --- |
 | Encrypted cloud storage | 250 MB | 10 GB |
-| Connected devices | 2 | No plan limit |
+| Devices that sync | 2 | No plan limit |
 | Largest synced file | 25 MB | 200 MB |
 | Time machine | 30 days | Full available history |
 | End-to-end encryption | Included | Included |
