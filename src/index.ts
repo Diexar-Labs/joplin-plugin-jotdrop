@@ -35,9 +35,11 @@ let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
 // The search, notebook, tag and archive filters the board had when a card was opened (forum 51337, 20 Nov): they come back with it.
-let boardView: { query: string; folderId: string; tag: string; paper: string; archive: boolean } | null = null;
+// With a search, also the cards it showed (forum 51337 #46): some matched text that a new board has not read yet.
+let boardView: { query: string; folderId: string; tag: string; paper: string; archive: boolean; found?: string[] } | null = null;
 const cleanView = (view: any) => view && typeof view === 'object'
-	? { query: String(view.query || ''), folderId: String(view.folderId || ''), tag: String(view.tag || ''), paper: String(view.paper || ''), archive: view.archive === true }
+	? { query: String(view.query || ''), folderId: String(view.folderId || ''), tag: String(view.tag || ''), paper: String(view.paper || ''), archive: view.archive === true,
+		...(Array.isArray(view.found) ? { found: view.found.filter((id: unknown) => typeof id === 'string').slice(0, 20000) } : {}) }
 	: null;
 
 const isBoardBody = (body: string | undefined) => !!body && body.includes(BOARD_FENCE);
