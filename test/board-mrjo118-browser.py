@@ -6,6 +6,7 @@ to-do keeps its box; Joplin's own search language goes to Joplin; Find duplicate
 no Drawing on a phone."""
 import json
 import mimetypes
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
@@ -53,7 +54,10 @@ def main():
 
     def serve(route):
         path = urlparse(route.request.url).path
-        if path == "/":
+        if path == "/photo.svg":
+            time.sleep(0.15)  # a photo arrives after the board has drawn, as on a phone
+            route.fulfill(content_type="image/svg+xml", body='<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#888"/></svg>')
+        elif path == "/":
             route.fulfill(content_type="text/html; charset=utf-8", body='<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/dist/board.css"></head><body><div id="jotdrop-root"></div><script src="/dist/board.js"></script></body></html>')
         else:
             file = (ROOT / path.lstrip("/")).resolve()
@@ -115,7 +119,9 @@ def main():
         page.locator(".note-card h3").first.tap()
         page.wait_for_function("window.messages.some((m) => m.type === 'open')")
         sent = page.evaluate("window.messages.find((m) => m.type === 'open')")
+        found = sent["view"].pop("found")
         assert sent["view"] == {"query": "Short", "folderId": "h", "tag": "", "paper": "", "archive": False}, sent
+        assert sorted(found) == sorted(c["id"] for c in cards if c["folderId"] == "h"), found  # the cards the search showed
         assert "y" in sent and "top" in sent
 
         # --- The tag row is one line with a +N button, and many tags no longer fill the top (393 px).
@@ -215,6 +221,102 @@ def main():
                 phone.locator(".jd-tools-btn").evaluate("el => el.click()")
                 phone.locator(".menu-tools").wait_for()
                 assert phone.locator(".menu-tools button", has_text="Drawing").count() == 0, f"no Drawing in the menu ({width})"
+
+        # --- Forum 51337 #46: coming back from a note opened from a search keeps the results and the scroll place.
+        # "Hi" is in no word's start (Joplin's index finds nothing), only inside "which", which the board matches in the
+        # text it has read. Before the fix the results were gone after the note, and the board jumped to the top.
+        hi_bodies = dict(bodies)
+        tall = [card(i, folderId="h") for i in range(12, 52)]
+        for c in tall:
+            n = int(c["id"][1:])
+            hi_bodies[c["id"]] = ("Something which matters.\n" if n % 2 == 0 else "A plain line.\n") + "More text here.\n" * 6
+        hi_bridge = BRIDGE.replace("BODIES", json.dumps(hi_bodies))
+
+        def open_hi(view=None, scroll=None, extra=None):
+            data = {"locale": "en", "platform": "mobile", "cards": tall, "folders": folders, "boardFolder": "h", "drawers": [], "scroll": scroll, "view": view}
+            context = browser.new_context(viewport={"width": 393, "height": 800}, has_touch=True)
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("http://jotdrop.test/**", serve)
+            page.add_init_script(hi_bridge.replace("DATA", json.dumps(data)))
+            if extra:
+                page.add_init_script(extra)
+            # Counts how often the grid is built from scratch: a second build moves the board on a phone, where photos load late.
+            page.add_init_script("window.renders = 0; new MutationObserver((records) => { for (const r of records) for (const n of r.addedNodes) if (n.classList && n.classList.contains('jd-cols')) window.renders++; }).observe(document, { childList: true, subtree: true });")
+            page.goto("http://jotdrop.test/", wait_until="networkidle")
+            page.locator(".note-card, .jd-empty").first.wait_for()
+            page.jd_errors = errors
+            return page
+
+        page = open_hi()
+        page.locator(".jd-search").fill("Hi")
+        page.wait_for_timeout(600)
+        before_count = page.locator(".jd-count").inner_text()
+        before_titles = titles(page)
+        assert before_count == "20 notes", before_count
+        page.evaluate("(document.scrollingElement || document.documentElement).scrollTop = 900")
+        page.wait_for_timeout(300)
+        target = page.evaluate("[...document.querySelectorAll('.note-card')].find((c) => c.getBoundingClientRect().top > 120).dataset.id")
+        page.locator(f'.note-card[data-id="{target}"] h3').tap()
+        page.wait_for_function("window.messages.some((m) => m.type === 'open')")
+        sent = page.evaluate("window.messages.find((m) => m.type === 'open')")
+        assert sent["y"] >= 800, sent
+        back = open_hi(view=sent["view"], scroll={"id": sent["id"], "top": sent["top"], "y": sent["y"], "shown": sent["shown"]})
+        back.wait_for_timeout(800)  # Joplin's own search answers after 200 ms; it must not empty or move the board
+        assert back.locator(".jd-search").input_value() == "Hi"
+        assert back.locator(".jd-empty").count() == 0, back.locator(".jd-empty").inner_text()
+        assert back.locator(".jd-count").inner_text() == before_count, back.locator(".jd-count").inner_text()
+        assert titles(back) == before_titles, (titles(back), before_titles)
+        card_top = back.locator(f'.note-card[data-id="{target}"]').bounding_box()["y"]
+        assert abs(card_top - sent["top"]) <= 4, ("the opened card is back where it was", card_top, sent["top"])
+        # Joplin's answer adds no card, so the board is not built a second time (on Erics phone the place drifted every time).
+        assert back.evaluate("window.renders") == 1, ("the board was built again after Joplin's answer", back.evaluate("window.renders"))
+        assert not back.jd_errors, back.jd_errors
+        # A new search after that is Joplin's and the text again, and starts at the top.
+        back.locator(".jd-search").fill("plain")
+        back.wait_for_timeout(600)
+        assert back.locator(".jd-count").inner_text() == "20 notes", back.locator(".jd-count").inner_text()
+        assert back.evaluate("(document.scrollingElement || document.documentElement).scrollTop") == 0
+
+        # --- On Eric's phone (21 Nov): the opened card has a photo and its top edge was just above the screen. A photo has no
+        # height until it has loaded, which is after the board is back, so the board slid by the photo's height on every return.
+        photo_ids = [c["id"] for c in tall if int(c["id"][1:]) % 3 == 0]
+        photos = ("(() => { const photos = PHOTOS; const inner = window.webviewApi.postMessage; window.webviewApi.postMessage = async (m) => {"
+                  " const out = await inner(m); if (m.type === 'previews') for (const p of out) if (photos.includes(p.id))"
+                  " p.image = { id: 'p' + p.id, url: 'http://jotdrop.test/photo.svg?' + p.id, drawing: false }; return out; }; })();").replace("PHOTOS", json.dumps(photo_ids))
+        near_loaded = "[...document.querySelectorAll('img.card-cover')].filter((i) => i.getBoundingClientRect().top < innerHeight + 300).every((i) => i.complete && i.naturalHeight > 0)"
+        top_of = "(id) => document.querySelector(`.note-card[data-id=\"${id}\"]`).getBoundingClientRect().top"
+        for label, searching in (("no search", False), ("search", True)):
+            page = open_hi(extra=photos)
+            if searching:
+                page.locator(".jd-search").fill("Hi")
+                page.wait_for_timeout(600)
+            page.wait_for_function(near_loaded)
+            target = page.evaluate("(ids) => [...document.querySelectorAll('.note-card')].find((c) => ids.includes(c.dataset.id) && c.getBoundingClientRect().top > 500).dataset.id", photo_ids)
+            for _ in range(2):  # photos that come into reach load and move the cards, so aim twice
+                page.evaluate("(id) => { (document.scrollingElement || document.documentElement).scrollTop += document.querySelector(`.note-card[data-id=\"${id}\"]`).getBoundingClientRect().top + 8; }", target)
+                page.wait_for_function(near_loaded)
+                page.wait_for_timeout(300)
+            assert abs(page.evaluate(top_of, target) + 8) <= 1, (label, "the card's top edge is just above the screen", page.evaluate(top_of, target))
+            page.evaluate("window.messages.length = 0")
+            page.locator(f'.note-card[data-id="{target}"] h3').tap()
+            page.wait_for_function("window.messages.some((m) => m.type === 'open')")
+            sent = page.evaluate("window.messages.find((m) => m.type === 'open')")
+            assert abs(sent["top"] + 8) <= 1, (label, sent)
+            back = open_hi(view=sent["view"], scroll={"id": sent["id"], "top": sent["top"], "y": sent["y"], "shown": sent["shown"]}, extra=photos)
+            back.wait_for_function(near_loaded)
+            back.wait_for_timeout(500)
+            card_top = back.evaluate(top_of, target)
+            assert abs(card_top - sent["top"]) <= 2, (label, "the opened card with a photo is back where it was", card_top, sent["top"])
+            assert not back.jd_errors, back.jd_errors
+            # The reader's own scrolling ends that: a card that grows later does not pull the board back.
+            back.mouse.move(200, 400)
+            back.mouse.wheel(0, 300)
+            back.wait_for_timeout(300)
+            back.evaluate("document.querySelector('.note-card').style.minHeight = '500px'")
+            back.wait_for_timeout(300)
+            assert abs(back.evaluate(top_of, target) - sent["top"]) > 100, (label, "the board stays where the reader scrolled it", back.evaluate(top_of, target))
 
         browser.close()
     print("PASS board-mrjo118-browser")

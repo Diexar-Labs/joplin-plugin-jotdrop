@@ -126,6 +126,10 @@ let dropCard = null;
 let swallowClick = false;
 // Where to land when the board comes back from a note: { id, top, y, shown }, used once by the first render.
 let restore = null;
+// The card that was opened, held at its old place while photos load: a photo has no height before that, so the cards
+// still move after the board is back (Eric's phone, 21 Nov). { id, top, observer, timer }; the reader's own scrolling ends it.
+let held = null;
+const HOLD_MS = 5000;
 const previews = new Map();
 // The task just ticked on a card stays a moment as ☑, then joins "+ N checked items" (like Keep).
 const TICK_SHOWN_MS = 400;
@@ -268,6 +272,8 @@ async function load() {
     if (data.view) {
       Object.assign(state, { query: data.view.query, tag: data.view.tag, paper: data.view.paper, archive: data.view.archive });
       if ((data.folders || []).some((f) => f.id === data.view.folderId)) state.folderId = data.view.folderId;
+      // A search shows the same cards as before the note: some matched text this new board has not read yet (forum 51337 #46).
+      if (state.query.trim() && Array.isArray(data.view.found)) state.found = new Set(data.view.found);
     }
     buildShell();
     els.search.value = state.query;
@@ -281,7 +287,7 @@ async function load() {
   if (same === lastData) return;
   lastData = same;
   Object.assign(state, { cards: data.cards, folders: data.folders, drawers: data.drawers || [], paperTipClosed: !!data.paperTipClosed, boardFolder: data.boardFolder });
-  if (state.query.trim()) runSearch();
+  if (state.query.trim()) runSearch(true);
   renderAll(false);
 }
 
@@ -355,21 +361,25 @@ function visibleCards() {
 }
 
 // Title, tags and fetched text match at once; Joplin's index adds the notes the board has not fetched.
-function runSearch() {
+// `keepPlace` is the same search again (the board came back or reloaded): its cards stay and the board does not move.
+function runSearch(keepPlace = false) {
   const token = ++searchToken;
   clearTimeout(searchTimer);
   const text = state.query;
   if (!text.trim()) {
     state.found = null;
-    return renderGrid(true);
+    return renderGrid(!keepPlace);
   }
-  renderGrid(true);
+  renderGrid(!keepPlace);
   searchTimer = setTimeout(async () => {
     let ids = [];
     try { ids = await post({ type: 'search', text }); } catch { /* the local match above still stands */ }
     if (token !== searchToken) return;
-    state.found = new Set(ids);
-    renderGrid(true);
+    const before = state.found;
+    state.found = new Set(keepPlace && before ? [...before, ...ids] : ids);
+    // Joplin adds no card: build nothing again (a second build moves the place when photos load late on a phone).
+    if (keepPlace && before && state.found.size === before.size) return;
+    renderGrid(!keepPlace);
   }, 200);
 }
 
@@ -441,6 +451,8 @@ function buildShell() {
   new ResizeObserver(() => { const width = tags.clientWidth; if (width !== tagsWidth) { tagsWidth = width; if (refitTags) refitTags(); } }).observe(tags);
   new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+  // The reader's own scrolling ends the hold on the card that was opened.
+  for (const type of ['touchstart', 'wheel', 'mousedown', 'keydown']) window.addEventListener(type, releaseCard, { capture: true, passive: true });
   // A tap outside an open menu only closes it: the card or button under the finger must not act as well (forum 51337, 18 Nov).
   // It runs in the capture phase, before every other handler, so the "More" button closes its own menu instead of opening it
   // again, and the same goes for all the menus.
@@ -852,12 +864,38 @@ async function renderGrid(fromTop) {
   shown = 0;
   place(count);
   scroller.scrollTop = restore ? restore.y : (fromTop ? 0 : y);
-  // Photos load after this, so the opened card itself is put back where it was; the browser then keeps it there.
-  const back = restore && restore.id ? els.grid.querySelector(`[data-id="${restore.id}"]`) : null;
-  if (back) scroller.scrollTop += back.getBoundingClientRect().top - restore.top;
+  // Photos load after this, so the opened card itself is put back where it was and held there; a board built again keeps the hold.
+  if (restore && restore.id) holdCard(restore.id, restore.top);
+  else if (fromTop) releaseCard();
+  else if (held) holdCard(held.id, held.top);
   restore = null;
   revealBoard();
   loadMore();
+}
+
+// Puts a card at `top` on the screen and keeps it there while the columns still change height. The browser's own scroll
+// anchoring holds the first text in view instead, so a photo that loads in the card itself pushed its top edge off the screen.
+function holdCard(id, top) {
+  releaseCard();
+  const card = els.grid.querySelector(`[data-id="${id}"]`);
+  if (!card) return;
+  const scroller = document.scrollingElement || document.documentElement;
+  const settle = () => {
+    if (!card.isConnected) return releaseCard();
+    scroller.scrollTop += card.getBoundingClientRect().top - top;
+  };
+  settle();
+  // A resize observer runs after layout and before the screen is drawn, so nothing is seen to jump.
+  const observer = new ResizeObserver(settle);
+  for (const el of [document.getElementById('jotdrop-root'), ...els.grid.querySelectorAll('.jd-col')]) observer.observe(el);
+  held = { id, top, observer, timer: setTimeout(releaseCard, HOLD_MS) };
+}
+
+function releaseCard() {
+  if (!held) return;
+  held.observer.disconnect();
+  clearTimeout(held.timer);
+  held = null;
 }
 
 function revealBoard() {
@@ -971,6 +1009,8 @@ function openCard(id) {
   const card = els.grid.querySelector(`[data-id="${id}"]`);
   const top = card ? card.getBoundingClientRect().top : 0;
   const view = { query: state.query, folderId: state.folderId, tag: state.tag, paper: state.paper, archive: state.archive };
+  // The cards a search shows go along, so the board can show the same ones when it comes back (forum 51337 #46).
+  if (state.query.trim()) view.found = order.map((c) => c.id);
   post({ type: 'open', id, y, top, shown, view }).catch(() => toast(t.failed));
 }
 
