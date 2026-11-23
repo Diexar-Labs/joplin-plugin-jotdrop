@@ -11,7 +11,8 @@ html, body { margin: 0; background: var(--page); color: var(--ink); font-family:
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.jd-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 10px; }
+/* The title sits level with the first row of the filters, also when they wrap onto more rows (forum 51337, 23 Nov). */
+.jd-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; margin-bottom: 10px; }
 .jd-brand { display: flex; align-items: baseline; gap: 12px; }
 .jd-word { font-family: var(--heading); font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; }
 .jd-count { margin: 0; font-family: "Caveat", cursive; font-weight: 600; font-size: 1.3rem; color: var(--hand); transform: rotate(-2deg); }
@@ -34,6 +35,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-tags-toggle[hidden] { display: none; }
 .jd-chip { padding: 3px 11px; border: 1.5px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; font-size: .85rem; }
 .jd-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+/* A tag longer than the row is cut with "…" (the full name is in its tooltip). Without this the one long chip wrapped to the
+   second line and took every chip after it along behind "+N", and opened up it ran off the screen (forum 51337, 23 Nov). */
+.jd-tags-list > .jd-chip:not(.jd-paper-chip) { max-width: min(100%, 16em); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .jd-compose { max-width: 600px; margin: 0 auto 22px; padding: 8px 14px; border: 1.5px solid var(--edge); border-radius: 10px 10px 18px 10px; background: var(--surface); box-shadow: 4px 4px 0 var(--amber); }
 .jd-compose input, .jd-compose textarea { display: block; width: 100%; box-sizing: border-box; border: 0; background: transparent; padding: 6px 0; resize: vertical; outline: none; }
@@ -48,7 +52,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .jd-empty { color: var(--muted); text-align: center; margin: 40px 0; }
 .jd-more { height: 1px; }
-.jd-archive { flex: none; align-self: center; }
+.jd-archive { flex: none; }
+/* Every chip keeps its own height and sits in the middle of its row, so Archive, Ask JotDrop and Find duplicates are equally
+   high on a wide screen and on a wrapped one (forum 51337, 23 Nov). The "More" button on a phone still stretches. */
+.jd-filters > .jd-chip:not(.jd-tools-btn) { align-self: center; }
 
 .note-card { position: relative; isolation: isolate; padding: 14px 15px 10px; border-radius: 10px 10px 22px 10px; cursor: pointer; overflow-wrap: anywhere; }
 .card-paper { position: absolute; inset: 0; z-index: -1; border: 1px solid var(--line); border-radius: inherit; background: var(--note); rotate: var(--tilt, 0deg); transition: translate .15s ease, box-shadow .15s ease; }
