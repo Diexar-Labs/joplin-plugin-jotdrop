@@ -659,7 +659,7 @@ function renderTags() {
   // The chosen chip carries a ✓ as well as its colour (colour-blind safe).
   const chip = (label, value) => {
     const on = state.tag === value;
-    return h('button', { type: 'button', class: 'jd-chip', 'aria-pressed': String(on), onclick: () => { state.tag = value; renderAll(true); } }, on ? '✓ ' : '', label);
+    return h('button', { type: 'button', class: 'jd-chip', 'aria-pressed': String(on), title: value ? label : undefined, onclick: () => { state.tag = value; renderAll(true); } }, on ? '✓ ' : '', label);
   };
   const chips = [...paperChips(), ...(names.length ? [chip(t.allTags, ''), ...names.map((n) => chip(`#${n}`, n))] : [])];
   if (!chips.length) { refitTags = null; return els.tags.replaceChildren(); }
