@@ -687,7 +687,10 @@ function fitTags(list, toggle) {
   const first = chips[0].offsetTop;
   const rest = chips.filter((chip) => chip.offsetTop > first + 2);
   if (!rest.length) { toggle.hidden = true; return; }
-  const row = Math.max(...chips.filter((chip) => chip.offsetTop <= first + 2).map((chip) => chip.offsetHeight));
+  // A chip is not a whole number of pixels high (about 26.5: a 1.5 px border and the font's line height). offsetHeight
+  // rounds that to 26, which cut the bottom off every chip (forum 51337 #54), so the row is measured exactly and rounded up.
+  const top = list.getBoundingClientRect().top;
+  const row = Math.ceil(Math.max(...chips.filter((chip) => chip.offsetTop <= first + 2).map((chip) => chip.getBoundingClientRect().bottom)) - top);
   if (tagsOpen) {
     toggle.textContent = t.fewerTags;
     toggle.title = t.showFewerTags;
