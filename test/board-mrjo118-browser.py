@@ -1,7 +1,8 @@
 """Run after npm run build: python test/board-mrjo118-browser.py. Synthetic Joplin bridge only.
 
 Forum 51337, 20 Nov (mrjo118): the search, notebook and filters stay when you come back from a note; the clear cross of the
-search box stays while it holds text; the tag row is one line with a +N button; a card shows at most four tags; a Joplin
+search box stays while it holds text; the tag row is one line with a +N button, with no chip cut at the bottom (#54, 24 Nov);
+a card shows at most four tags; a Joplin
 to-do keeps its box; Joplin's own search language goes to Joplin; Find duplicates says which notebook a note is in; there is
 no Drawing on a phone."""
 import json
@@ -137,10 +138,15 @@ def main():
         assert count == clipped and count > 0, (count, clipped)
         assert toggle.get_attribute("aria-expanded") == "false"
         assert page.locator(".jd-tags-list .is-clipped").first.evaluate("el => getComputedStyle(el).visibility") == "hidden"
-        # Every chip that stays in view fits whole.
-        for kept in page.locator(".jd-tags-list .jd-chip:not(.is-clipped)").all():
-            b = kept.bounding_box()
-            assert b["x"] + b["width"] <= row["x"] + row["width"] + 1, (b, row)
+        # Every chip that stays in view fits whole, also at the bottom: a chip is about 26.5 px high, and a row rounded down
+        # to 26 px cut its bottom off (forum 51337 #54).
+        def fits_whole():
+            row = page.locator(".jd-tags-list").bounding_box()
+            for kept in page.locator(".jd-tags-list .jd-chip:not(.is-clipped)").all():
+                b = kept.bounding_box()
+                assert b["x"] + b["width"] <= row["x"] + row["width"] + 1, (b, row)
+                assert b["y"] + b["height"] <= row["y"] + row["height"] + 0.01, f"cut at the bottom: {b} {row}"
+        fits_whole()
         toggle.tap()
         assert page.locator(".jd-tags-toggle").inner_text() == "Less"
         assert page.locator(".jd-tags-toggle").get_attribute("aria-expanded") == "true"
@@ -149,6 +155,7 @@ def main():
         page.locator(".jd-tags-toggle").tap()
         assert page.locator(".jd-tags-list").bounding_box()["height"] <= chip["height"] + 2, "closed again"
         assert page.locator(".jd-tags-toggle").inner_text() == f"+{count}"
+        fits_whole()
         # A row that fits shows no button.
         page = open_board(browser, 393, board_cards=[card(0, tags=["a"]), card(1)])
         assert not page.locator(".jd-tags-toggle").is_visible()
