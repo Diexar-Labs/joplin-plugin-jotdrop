@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fileChip, fileKind, resourceLinks, sizeText } from '../src/fileChips.mjs';
+import { fileChip, fileKind, resourceLinks, sizeText, soundLinks } from '../src/fileChips.mjs';
 import { previewLines } from '../src/board/note.js';
 
 const ID = '0123456789abcdef0123456789abcdef';
@@ -18,6 +18,20 @@ test('resource links are found with or without !, note links too (their lookup s
   const body = `See [offer.pdf](:/${ID}) and ![scan](:/${'a'.repeat(32)} "title") and [a note](:/${'B'.repeat(32)}).`;
   assert.deepEqual(resourceLinks(body).map((l) => [l.id, l.text]), [[ID, 'offer.pdf'], ['a'.repeat(32), 'scan'], ['b'.repeat(32), 'a note']]);
   assert.deepEqual(resourceLinks('[web](https://example.com) and ![[x.pdf]]'), []);
+});
+
+test('a sound can be any resource link without "!" before it, as the old lookbehind found them', () => {
+  const other = 'b'.repeat(32), upper = 'ABCDEF0123456789ABCDEF0123456789';
+  assert.deepEqual(soundLinks(`Memo [rec.m4a](:/${ID}) and ![photo](:/${other})`), [{ link: `[rec.m4a](:/${ID})`, id: ID }]);
+  // The id stays as written: Joplin looks it up as it is.
+  assert.deepEqual(soundLinks(`[a](:/${upper} "title")`), [{ link: `[a](:/${upper} "title")`, id: upper }]);
+  // After an image link the search goes on one character further, so a link inside its text is still found.
+  assert.deepEqual(soundLinks(`![x [y](:/${ID})`), [{ link: `[y](:/${ID})`, id: ID }]);
+  assert.deepEqual(soundLinks(`![a](:/${ID})[b](:/${other})`), [{ link: `[b](:/${other})`, id: other }]);
+  assert.deepEqual(soundLinks(`!![a](:/${ID})`), []);
+  assert.deepEqual(soundLinks(`[a](:/${ID})[b](:/${other})`).map((l) => l.id), [ID, other]);
+  assert.deepEqual(soundLinks('[web](https://example.com)'), []);
+  assert.deepEqual(soundLinks(null), []);
 });
 
 test('a photo or a sound is no chip; anything else is, with name and size', () => {

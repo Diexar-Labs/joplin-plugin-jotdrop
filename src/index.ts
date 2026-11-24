@@ -7,7 +7,7 @@ import { drawerLabel, isPaperDrawer, validExpires, warnReminder } from './cloud-
 import { tickEdit } from './cloud-shared/format.mjs';
 import { boardRank } from './board/order.js';
 import { isAdvancedSearch } from './board/search.js';
-import { fileChip, resourceLinks } from './fileChips.mjs';
+import { fileChip, resourceLinks, soundLinks } from './fileChips.mjs';
 import { aiFileKinds, registerAiSettings, setupAsk } from './ai';
 
 // JotDrop for Joplin. One special note is the board: when it is open, the JotDrop editor view
@@ -107,14 +107,12 @@ async function firstImage(body: string): Promise<{ id: string; url: string; draw
 	return null;
 }
 
-const AUDIO_LINK = /(?<!!)\[[^\]]*\]\(:\/([0-9a-fA-F]{32})[^)]*\)/g;
-
 // The first sound in a note plays on the card; its link is not shown as text as well.
 async function firstAudio(body: string) {
-	for (const match of body.matchAll(AUDIO_LINK)) {
+	for (const { link, id } of soundLinks(body)) {
 		try {
-			const resource = await joplin.data.get(['resources', match[1]], { fields: ['mime'] });
-			if (String(resource?.mime).startsWith('audio/')) return { link: match[0], url: fileUrl(await joplin.data.resourcePath(match[1])) };
+			const resource = await joplin.data.get(['resources', id], { fields: ['mime'] });
+			if (String(resource?.mime).startsWith('audio/')) return { link, url: fileUrl(await joplin.data.resourcePath(id)) };
 		} catch {
 			// A link to a resource that is gone: no player.
 		}
