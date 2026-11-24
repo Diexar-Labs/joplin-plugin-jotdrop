@@ -608,7 +608,8 @@ function buildComposer() {
   });
   form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
   form.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+    // Enter in the title saves here, not through the form, which Joplin's web app blocks in its sandboxed frame (forum 51337 #52, 24 Nov).
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (e.target === title && !e.isComposing))) { e.preventDefault(); submit(); }
     if (e.key === 'Escape') close();
   });
   return form;

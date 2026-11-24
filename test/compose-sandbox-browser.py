@@ -5,7 +5,9 @@ Forum 51337 #52, 24 Nov (mrjo118), Joplin's web app in Chrome on Windows:
    iframe with sandbox="allow-scripts allow-modals allow-popups allow-popups-to-escape-sandbox" (packages/app-mobile/
    components/ExtendedWebView/index.web.tsx). Without allow-forms the browser blocks a form submission, so a submit button
    never reaches the submit handler. This test loads the board in such an iframe.
-2. With the paper drawer open, the drawer's panel is as wide as "Take a note"."""
+2. Enter in the title went through the form as well, so in that frame it saved nothing either. Enter in the title and
+   Ctrl+Enter in the text save the note once, in the sandboxed frame and in a frame without a sandbox.
+3. With the paper drawer open, the drawer's panel is as wide as "Take a note"."""
 import json
 import mimetypes
 from pathlib import Path
@@ -45,9 +47,10 @@ def main():
 
     def serve(route):
         path = urlparse(route.request.url).path
-        if path == "/":
+        if path in ("/", "/plain"):
+            sandbox = f' sandbox="{SANDBOX}"' if path == "/" else ""
             route.fulfill(content_type="text/html; charset=utf-8",
-                          body=f'<html><body style="margin:0"><iframe sandbox="{SANDBOX}" src="/board.html" style="border:0;width:100vw;height:100vh"></iframe></body></html>')
+                          body=f'<html><body style="margin:0"><iframe{sandbox} src="/board.html" style="border:0;width:100vw;height:100vh"></iframe></body></html>')
         elif path == "/board.html":
             route.fulfill(content_type="text/html; charset=utf-8", body=BOARD_HTML)
         else:
@@ -55,17 +58,23 @@ def main():
             assert file.is_relative_to(ROOT)
             route.fulfill(path=str(file), content_type=(mimetypes.guess_type(str(file))[0] or "application/octet-stream") + "; charset=utf-8")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel="msedge")
+    def open_board(browser, path, errors):
         page = browser.new_context(viewport={"width": 1304, "height": 800}).new_page()
-        errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.route("http://jotdrop.test/**", serve)
         page.add_init_script(BRIDGE.replace("DATA", json.dumps(data)))
-        page.goto("http://jotdrop.test/", wait_until="networkidle")
+        page.goto(f"http://jotdrop.test{path}", wait_until="networkidle")
         board = page.frame_locator("iframe")
         board.locator(".note-card").first.wait_for()
-        frame = page.frames[1]
+        return page, board, page.frames[1]
+
+    def creates(frame):
+        return len([m for m in frame.evaluate("() => window.messages") if m.get("type") == "create"])
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel="msedge")
+        errors = []
+        page, board, frame = open_board(browser, "/", errors)
         assert frame.evaluate("() => !!window.webviewApi"), "the bridge is not in the sandboxed frame"
 
         # 1. Type a note in the sandboxed frame and press Close: it is saved, the box closes and empties.
@@ -88,7 +97,19 @@ def main():
         assert not frame.evaluate("() => document.querySelector('.jd-compose').classList.contains('is-open')"), "an empty box does not close"
         assert len([m for m in frame.evaluate("() => window.messages") if m.get("type") == "create"]) == 1, "an empty box saved a note"
 
-        # 2. The paper drawer's panel is as wide as "Take a note", as a full intro and as a tip.
+        # 2. Enter in the title and Ctrl+Enter in the text save the note once, in the sandboxed frame and without a sandbox.
+        for path in ["/", "/plain"]:
+            pg, bd, fr = (page, board, frame) if path == "/" else open_board(browser, path, errors)
+            where = "a sandboxed frame" if path == "/" else "a frame without a sandbox"
+            for field, key in [(".jd-c-title", "Enter"), (".jd-c-body", "Control+Enter")]:
+                before = creates(fr)
+                bd.locator(".jd-c-body").click()
+                bd.locator(".jd-c-title").fill(f"{key} in {where}")
+                bd.locator(field).press(key)
+                pg.wait_for_timeout(500)
+                assert creates(fr) == before + 1, f"{key} in {where} saved {creates(fr) - before} notes, not 1"
+
+        # 3. The paper drawer's panel is as wide as "Take a note", as a full intro and as a tip.
         board.locator(".jd-paper-chip").first.click()
         page.wait_for_timeout(400)
         w = frame.evaluate(WIDTHS)
