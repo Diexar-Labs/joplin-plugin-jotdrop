@@ -20,6 +20,23 @@ export function resourceLinks(body) {
   return [...String(body || '').matchAll(RESOURCE_LINK)].map((m) => ({ link: m[0], id: m[2].toLowerCase(), text: m[1] }));
 }
 
+// The same link without "!": [name](:/<id>), where a sound can be. The "!" is checked by soundLinks, not by a lookbehind:
+// Safari before iOS 16.4 cannot load a script with one, and Joplin's mobile app runs plugins in a web view.
+const PLAIN_LINK = /\[[^\]]*\]\(:\/([0-9a-fA-F]{32})[^)]*\)/g;
+
+/**
+ * Every resource link in [body] with no "!" right before it, in order: { link, id }. After a link with a "!" the
+ * search goes on one character further, as a lookbehind would, so [y](:/<id>) in "![x [y](:/<id>)" is still found.
+ */
+export function soundLinks(body) {
+  const text = String(body || ''), re = new RegExp(PLAIN_LINK.source, 'g'), found = [];
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    if (text[m.index - 1] === '!') re.lastIndex = m.index + 1;
+    else found.push({ link: m[0], id: m[1] });
+  }
+  return found;
+}
+
 /**
  * The chip for a resource (fields id, title, mime, file_extension, size), or null for a photo or a sound.
  * The name is the resource's file name, as Joplin shows it; the size only once the file is on this device.
