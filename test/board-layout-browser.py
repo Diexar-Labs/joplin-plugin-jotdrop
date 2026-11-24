@@ -2,7 +2,10 @@
 
 Forum 51337, 23 Nov (mrjo118): on a wide screen Archive is as high as Ask JotDrop and Find duplicates; a tag longer than the
 row is cut with "..." instead of hiding every tag behind "+N", and opened up it stays inside the screen; when the filters
-wrap onto more rows the JotDrop title stays level with the first row."""
+wrap onto more rows the JotDrop title stays level with the first row.
+
+Forum 51337 #52, 24 Nov (mrjo118): a long tag with spaces on a card stays on one line, cut with "...", instead of filling the
+card as a grey oval."""
 import json
 import mimetypes
 from pathlib import Path
@@ -24,6 +27,15 @@ BRIDGE = """
 
 LONG_TAG = "asdasdfdfgagsdfnhsdfgadfgasdfgsdfafsdfsdafasdfasdfasdfasdsdf" * 7
 TAGS = [LONG_TAG, "asdf", "asdfasdf", "dsfasdfg", "sdafasdf", "sdf", "sdfasdf"]
+SPACED_TAG = ("asdsdfgdfdfhdfg sfghhdfg fghh fggh fgh fgh fgh fgh fgh fgh fgh fgh fgghf ") * 4
+
+CARD_PROBE = """() => {
+  const chip = [...document.querySelectorAll('.note-card .jd-tagchip')].find((c) => c.textContent.includes('sfghhdfg'));
+  if (!chip) return null;
+  const b = chip.getBoundingClientRect(), card = chip.closest('.note-card').getBoundingClientRect();
+  return {h: b.height, font: parseFloat(getComputedStyle(chip).fontSize), cut: chip.scrollWidth > chip.clientWidth,
+          title: chip.title, right: b.right, cardRight: card.right};
+}"""
 
 PROBE = """() => {
   const rect = (el) => { const b = el.getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height}; };
@@ -55,8 +67,8 @@ def main():
             assert file.is_relative_to(ROOT)
             route.fulfill(path=str(file), content_type=(mimetypes.guess_type(str(file))[0] or "application/octet-stream") + "; charset=utf-8")
 
-    def open_board(browser, width, platform):
-        data = {"locale": "en", "platform": platform, "cards": cards, "folders": folders, "boardFolder": "h", "drawers": [], "scroll": None, "view": None}
+    def open_board(browser, width, platform, board_cards=None):
+        data = {"locale": "en", "platform": platform, "cards": board_cards or cards, "folders": folders, "boardFolder": "h", "drawers": [], "scroll": None, "view": None}
         page = browser.new_context(viewport={"width": width, "height": 700}).new_page()
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -99,6 +111,16 @@ def main():
                 assert not m["scrollsSideways"] and m["tagRight"] <= width, f"{width}px: opened up, the tag row runs off the screen ({m['tagRight']:.0f}px)"
                 every = len(TAGS) + (1 if width < 600 else 2)  # "All" and the tags, plus the Paper drawer chip unless it sits in "More"
                 assert len(m["shown"]) == every, f"{width}px: opened up, not every tag shows ({len(m['shown'])} of {every})"
+
+        # 4. A long tag with spaces on a card stays on one line, cut with "...", inside the card, with its full name as a tooltip.
+        spaced = [{**cards[0], "tags": [SPACED_TAG.strip()]}]
+        for platform, width in [("mobile", 390), ("mobile", 607), ("desktop", 1304)]:
+            m = open_board(browser, width, platform, spaced).evaluate(CARD_PROBE)
+            assert m, f"{platform} {width}px: the tag is not on the card"
+            assert m["h"] < m["font"] * 2.2, f"{platform} {width}px: the tag on the card wraps onto more lines ({m['h']:.0f}px high)"
+            assert m["cut"], f"{platform} {width}px: the long tag on the card is not cut"
+            assert m["title"] == "#" + SPACED_TAG.strip(), f"{platform} {width}px: the tag on the card has no tooltip with its full name"
+            assert m["right"] <= m["cardRight"], f"{platform} {width}px: the tag runs out of the card"
         browser.close()
     print("board layout (forum 51337, 23 Nov): ok")
 
