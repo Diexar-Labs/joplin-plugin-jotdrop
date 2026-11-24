@@ -575,7 +575,9 @@ function buildComposer() {
   const title = h('input', { class: 'jd-c-title', placeholder: t.title, 'aria-label': t.title });
   const body = h('textarea', { class: 'jd-c-body', placeholder: t.takeNote, 'aria-label': t.takeNote, rows: 1 });
   const where = h('span', { class: 'jd-c-where' });
-  const save = h('button', { type: 'submit', class: 'jd-c-save', text: t.close });
+  // Not a submit button: Joplin's web app shows the panel in a sandboxed iframe without allow-forms, where a form submission
+  // is blocked and the submit handler never runs, so Close did nothing there (forum 51337 #52, 24 Nov).
+  const save = h('button', { type: 'button', class: 'jd-c-save', text: t.close, onclick: () => submit() });
   const form = h('form', { class: 'jd-compose' }, title, body, h('div', { class: 'jd-c-bar' }, where, save));
   // A size the user dragged with the handle belongs to the open box: a closed box is one line again (forum 51337, 19 Nov), and the size comes back when the box opens.
   let dragged = '';
@@ -606,7 +608,8 @@ function buildComposer() {
   });
   form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
   form.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+    // Enter in the title saves here, not through the form, which Joplin's web app blocks in its sandboxed frame (forum 51337 #52, 24 Nov).
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (e.target === title && !e.isComposing))) { e.preventDefault(); submit(); }
     if (e.key === 'Escape') close();
   });
   return form;
@@ -982,7 +985,7 @@ function cardEl(c) {
   const chips = [
     ...c.tags.filter((tag) => isPaperDrawer(tag) || plainTags.indexOf(tag) < MAX_TAG_CHIPS).map((tag) => (isPaperDrawer(tag)
       ? h('span', { class: 'jd-tagchip jd-drawerchip' }, icon(TRAY), drawerShown(tag))
-      : h('span', { class: 'jd-tagchip', text: `#${tag}` }))),
+      : h('span', { class: 'jd-tagchip', title: `#${tag}`, text: `#${tag}` }))),
     ...(hiddenTags.length ? [h('span', { class: 'jd-tagchip jd-tagmore', title: hiddenTags.join(' '), 'aria-label': t.moreTagsOnCard(hiddenTags.join(' ')), text: `+${hiddenTags.length}` })] : []),
     ...urls.map((url) => h('a', { class: 'link-chip', href: url, title: url,
       onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openUrl', url }).catch(() => toast(t.failed)); } }, icon(LINK), urlHost(url))),
