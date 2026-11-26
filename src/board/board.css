@@ -89,6 +89,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-todo-head .jd-check { margin-top: -2px; }
 .jd-todo-head.is-done h3 { text-decoration: line-through; color: var(--muted); }
 .jd-tagmore { font-weight: 600; }
+/* A note without a title starts with its text: the first block (a paragraph or a task), or whatever comes first, keeps the title's room for the pin (forum 51337 #57). */
+.note-card.jd-untitled > .note-preview > :first-child, .note-card.jd-untitled > :nth-child(3):not(.note-preview) { padding-right: 26px; }
 .note-card h3 { margin: 0 0 6px; padding-right: 26px; font-family: var(--heading); font-size: 1.04rem; font-weight: 700; letter-spacing: -.01em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .note-preview { overflow: hidden; font-size: .93rem; }
 .jd-line { white-space: pre-wrap; min-height: 1.2em; }

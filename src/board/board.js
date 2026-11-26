@@ -943,7 +943,9 @@ function cardEl(c) {
   // One chip per site: three links to the same site would show three identical chips.
   const hosts = new Set();
   const urls = noteUrls(shownNote.body).filter((url) => !hosts.has(urlHost(url)) && hosts.add(urlHost(url))).slice(0, 3);
-  const card = h('article', { class: `note-card note-${c.color}${c.pinned ? ' is-pinned' : ''}`, tabindex: 0, 'data-id': c.id, 'aria-label': c.title || t.empty },
+  // Without a title or a photo the card starts with the note's text, which has to keep clear of the pin (forum 51337 #57).
+  const untitled = !c.title && !shownNote.image;
+  const card = h('article', { class: `note-card note-${c.color}${c.pinned ? ' is-pinned' : ''}${untitled ? ' jd-untitled' : ''}`, tabindex: 0, 'data-id': c.id, 'aria-label': c.title || t.empty },
     h('span', { class: 'card-paper', 'aria-hidden': 'true' }),
     h('span', { class: 'card-tape', 'aria-hidden': 'true' }));
   card.style.setProperty('--tilt', tiltFor(c.id));
