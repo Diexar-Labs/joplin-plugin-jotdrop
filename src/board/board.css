@@ -58,18 +58,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-filters > .jd-chip:not(.jd-tools-btn) { align-self: center; }
 
 .note-card { position: relative; isolation: isolate; padding: 14px 15px 10px; border-radius: 10px 10px 22px 10px; cursor: pointer; overflow-wrap: anywhere; }
-.card-paper { position: absolute; inset: 0; z-index: -1; border: 1px solid var(--line); border-radius: inherit; background: var(--note); rotate: var(--tilt, 0deg); transition: translate .15s ease, box-shadow .15s ease; }
-/* The cut-off bit of the folded corner shows what lies under it: the page, or the amber shadow under the pointer. Its colour
-   fades with the shadow, so no cream triangle lies on the shadow while it comes or goes (#109). */
-.card-paper::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 16px; height: 16px; border-top-left-radius: 5px; background: linear-gradient(to top left, transparent 50%, color-mix(in oklab, var(--note) 78%, var(--ink)) 50%) var(--page); transition: background-color .15s ease; }
+.card-paper { position: absolute; inset: 0; z-index: -1; border-radius: inherit; rotate: var(--tilt, 0deg); transition: translate .15s ease, filter .15s ease; }
+/* The paper itself. The folded corner is cut off for real, so whatever lies under the card shows there: the page, the shadow,
+   another card (#109, mrjo118: a corner painted in the page colour showed as a square edge on anything else). */
+.card-paper::before { content: ""; position: absolute; inset: 0; border: 1px solid var(--line); border-radius: inherit; background: var(--note); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%); }
+/* The flap of the folded corner lies along the cut; past it the corner is open. */
+.card-paper::after { content: ""; position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; border-top-left-radius: 5px; background: linear-gradient(to top left, transparent 50%, color-mix(in oklab, var(--note) 78%, var(--ink)) 50%); }
 /* The dragged card fades and a bar shows where it lands; nothing shifts while dragging. */
 .is-card-dragging, .is-card-dragging * { cursor: grabbing !important; user-select: none; }
 .note-card.is-dragging { opacity: .45; }
 .note-card.drop-before { box-shadow: 0 -6px 0 var(--accent); }
 .note-card.drop-after { box-shadow: 0 6px 0 var(--accent); }
 @media (hover: none) { .note-card { -webkit-touch-callout: none; user-select: none; } }
-.note-card:is(:hover, :focus-visible) .card-paper { translate: -2px -2px; box-shadow: 5px 5px 0 var(--amber); }
-.note-card:is(:hover, :focus-visible) .card-paper::after { background-color: var(--amber); }
+/* A drop shadow rather than a box shadow: it takes the paper's shape, cut corner included (#109). */
+.note-card:is(:hover, :focus-visible) .card-paper { translate: -2px -2px; filter: drop-shadow(5px 5px 0 var(--amber)); }
 .card-tape { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .note-card.is-pinned .card-tape::before { content: ""; position: absolute; top: -9px; left: 50%; width: 72px; height: 18px; translate: -50% 0; rotate: -4deg; background: color-mix(in srgb, var(--amber) 62%, transparent); }
 :is(.note-card, .swatch).note-red { --note: light-dark(#fbe5e4, #432d30); }
@@ -159,7 +161,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .jd-restoring #jotdrop-root { visibility: hidden; }
 .jd-totop { position: fixed; right: 18px; bottom: 18px; z-index: 20; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: var(--surface); box-shadow: 3px 3px 0 var(--amber); font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; opacity: 0; pointer-events: none; translate: 0 10px; transition: opacity .2s ease, translate .2s ease; }
 .jd-totop.is-shown { opacity: 1; pointer-events: auto; translate: 0 0; }
-@media (prefers-reduced-motion: reduce) { .card-paper, .card-paper::after, .jd-toast, .jd-totop, .card-pin, .card-actions { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .card-paper, .jd-toast, .jd-totop, .card-pin, .card-actions { transition: none; } }
 /* On a phone a card shows a Keep-sized peek of the note, not the whole note. */
 :root[data-platform="mobile"] body { font-size: 14px; }
 :root[data-platform="mobile"] .card-cover { max-height: 150px; }
