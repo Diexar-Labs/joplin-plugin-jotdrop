@@ -62,7 +62,9 @@ Then open the board:
 - **Desktop:** click the board button in the editor toolbar, or **View > Open JotDrop board**.
 - **Android:** tap the puzzle button at the top, then **Open JotDrop board**.
 
-The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. On desktop the board opens when Joplin starts from then on; you can turn that off under **Options > JotDrop**. On Android you open it from the puzzle button, so it never lands on top of a note you had just opened; you can switch opening at start on under **Configuration > JotDrop**.
+The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. On desktop the board opens when Joplin starts from then on; you can turn that off under **Options > JotDrop**. On Android you open it from the puzzle button, so it never lands on top of a note you had just opened; you can switch opening at start on under **Configuration > JotDrop**. To remove the launcher from the mobile plugin panel, turn off **Show the JotDrop plugin panel** there and restart Joplin. Once created, the board note remains available in the JotDrop notebook.
+
+Under **JotDrop** settings, **Notebook when opening the board** and **Tag when opening the board** choose the starting filters. They default to **(All notes)** and **(No tag)**, and can be used together. Opening a card and going back keeps your current filters and search. A deleted notebook or tag falls back to the default. Restart Joplin to see newly created notebooks and tags in the setting lists.
 
 Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins it recommends itself, so JotDrop is not available there.
 
@@ -74,7 +76,7 @@ Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins
 - **Ten soft paper colors**, each with its name, so you never have to rely on color alone.
 - **Your own order.** Drag with the mouse, or on a phone hold a card for a moment first. Cards stay where you put them, also when you tick something.
 - **Edited notes on top, if you like.** Turn on **Options > JotDrop > Move a note to the top of the board when you edit it**. Ticking a checkbox or setting a reminder on the board still leaves the card where it is.
-- **Back where you were.** Open a card and go back, and the board shows the same spot instead of the top. Far down a long board, the arrow button in the corner takes you straight back up to the search and filters.
+- **Back where you were.** Open a card and go back, or leave the board with Joplin's Back button and return, and the board shows the spot where you left it. Far down a long board, the arrow button in the corner takes you straight back up to the search and filters.
 - **Archive.** Move a card off the board without deleting anything, and bring it back whenever you like.
 
 ### Capture

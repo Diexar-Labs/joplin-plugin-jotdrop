@@ -34,9 +34,11 @@ let platform = 'desktop';
 let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
+let boardPositionAt = 0;
 // The search, notebook, tag and archive filters the board had when a card was opened (forum 51337, 20 Nov): they come back with it.
 // With a search, also the cards it showed (forum 51337 #46): some matched text that a new board has not read yet.
 let boardView: { query: string; folderId: string; tag: string; paper: string; archive: boolean; found?: string[] } | null = null;
+let freshOpenRevision = 0;
 const cleanView = (view: any) => view && typeof view === 'object'
 	? { query: String(view.query || ''), folderId: String(view.folderId || ''), tag: String(view.tag || ''), paper: String(view.paper || ''), archive: view.archive === true,
 		...(Array.isArray(view.found) ? { found: view.found.filter((id: unknown) => typeof id === 'string').slice(0, 20000) } : {}) }
@@ -194,6 +196,27 @@ async function tagMap(): Promise<Map<string, string[]>> {
 	return map;
 }
 
+function notebookSettingOptions(folders: any[]): Record<string, string> {
+	const byId = new Map(folders.map((folder) => [folder.id, folder]));
+	const path = (folder: any) => {
+		const names = [String(folder.title)];
+		const seen = new Set([folder.id]);
+		let parent = folder.parent_id;
+		while (parent && byId.has(parent) && !seen.has(parent)) {
+			seen.add(parent);
+			const ancestor = byId.get(parent);
+			names.unshift(String(ancestor.title));
+			parent = ancestor.parent_id;
+		}
+		return names.join(' › ');
+	};
+	return Object.fromEntries([['', '(All notes)'], ...folders.map((folder) => [folder.id, path(folder)]).sort((a, b) => a[1].localeCompare(b[1]))]);
+}
+
+function tagSettingOptions(tags: any[]): Record<string, string> {
+	return Object.fromEntries([['', '(No tag)'], ...tags.map((tag) => [tag.id, String(tag.title)]).sort((a, b) => a[1].localeCompare(b[1]))]);
+}
+
 async function cardFor(id: string) {
 	const tags = (await allPages(['notes', id, 'tags'], { fields: ['title'] })).map((tag) => tag.title);
 	const [note, shown] = await Promise.all([joplin.data.get(['notes', id], { fields: META_FIELDS }), preview(id)]);
@@ -202,19 +225,27 @@ async function cardFor(id: string) {
 
 async function loadBoard() {
 	const boardId = await findBoardNoteId();
-	const [notes, folders, tags, allTags] = await Promise.all([
+	const [notes, folders, tags, allTags, initialNotebookSetting, initialTagSetting] = await Promise.all([
 		allPages(['notes'], { fields: META_FIELDS }),
 		allPages(['folders'], { fields: ['id', 'title', 'parent_id'] }),
 		tagMap(),
-		allPages(['tags'], { fields: ['title'] }),
+		allPages(['tags'], { fields: ['id', 'title'] }),
+		joplin.settings.value('initialNotebookId'),
+		joplin.settings.value('initialTagId'),
 	]);
+	const selectedNotebookId = String(initialNotebookSetting || '');
+	const selectedTagId = String(initialTagSetting || '');
+	const initialNotebookId = folders.some((folder) => folder.id === selectedNotebookId) ? selectedNotebookId : '';
+	const initialTag = String(allTags.find((tag) => tag.id === selectedTagId)?.title || '');
+	if (selectedNotebookId && !initialNotebookId) await joplin.settings.setValue('initialNotebookId', '');
+	if (selectedTagId && !initialTag) await joplin.settings.setValue('initialTagId', '');
 	const editedToTop = !!await joplin.settings.value('editedToTop');
 	// Small drawers show up before they hold a paper, so a new one can be filled.
 	const drawers = allTags.map((tag) => String(tag.title)).filter((title) => isPaperDrawer(title) && title.includes('/'));
 	const cards = notes
 		.filter((note) => note.id !== boardId && readUserData(note.user_data).board !== true)
 		.map((note) => toMeta(note, tags.get(note.id) || [], editedToTop));
-	return { cards, scroll: boardScroll, view: boardView, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
+	return { cards, scroll: boardScroll, view: boardView, freshOpenRevision, initialNotebookId, initialTag, folders, drawers, paperTipClosed: !!await joplin.settings.value('paperTipClosed'), platform, boardFolder: await boardFolderId(), locale: String(await joplin.settings.globalValue('locale') || 'en'), cloud: platform === 'desktop' ? await cloudStatus() : null };
 }
 
 // Joplin's own full-text index, so a search also finds text in cards the board has not fetched.
@@ -390,9 +421,17 @@ async function answer(message: any) {
 	case 'previews': return Promise.all(message.ids.map(preview));
 	case 'search': return searchNotes(message.text);
 	case 'open':
+		if (Number.isFinite(message.at)) boardPositionAt = Math.max(boardPositionAt, Number(message.at));
 		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
 		boardView = cleanView(message.view);
 		await joplin.commands.execute('openNote', message.id);
+		return true;
+	case 'remember':
+		// A board can also be left with Joplin's Back button, without opening a card.
+		if (message.revision !== freshOpenRevision || !Number.isFinite(message.at) || message.at < boardPositionAt) return false;
+		boardPositionAt = Number(message.at);
+		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id || ''), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
+		if (Object.prototype.hasOwnProperty.call(message, 'view')) boardView = cleanView(message.view);
 		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
 	// Joplin opens an attached file the way it does from the note: in the computer's own app for that file.
@@ -502,6 +541,8 @@ async function boardFolderForNewBoard() {
 async function openBoard(create: boolean) {
 	// Opened on purpose (the puzzle button, the toolbar, startup): a fresh board. Only the way back from a note keeps its filters.
 	boardView = null;
+	boardScroll = null;
+	boardPositionAt = 0;
 	let id = await findBoardNoteId();
 	if (!id) {
 		if (!create) return;
@@ -511,9 +552,11 @@ async function openBoard(create: boolean) {
 		await joplin.settings.setValue('boardNoteId', id);
 		boardId = id;
 	}
+	freshOpenRevision++;
 	await joplin.commands.execute('openNote', id);
 	await delay(400);
 	await joplin.commands.execute('showEditorPlugin');
+	await notifyBoards();
 }
 
 joplin.plugins.register({
@@ -521,9 +564,18 @@ joplin.plugins.register({
 		platform = (await joplin.versionInfo()).platform;
 
 		await joplin.settings.registerSection('jotdrop', { label: 'JotDrop', iconName: 'fas fa-th-large' });
+		const [settingFolders, settingTags] = await Promise.all([
+			allPages(['folders'], { fields: ['id', 'title', 'parent_id'] }),
+			allPages(['tags'], { fields: ['id', 'title'] }),
+		]);
 		await joplin.settings.registerSettings({
 			boardNoteId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Board note' },
-			openAtStartup: { value: platform === 'desktop', type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts', description: 'On Android this is off by default: the board is one tap away behind the puzzle button, and opening it at start could land on top of a note you had just opened.' },
+			openAtStartup: { value: platform === 'desktop', type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts', description: 'On Android this is off by default, since opening the board at start could land on top of a note you had just opened.' },
+			initialNotebookId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: true, isEnum: true, options: notebookSettingOptions(settingFolders), label: 'Notebook when opening the board', description: 'Applies to a fresh opening. Going back from a note keeps your filters. Restart Joplin to list newly added notebooks.' },
+			initialTagId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: true, isEnum: true, options: tagSettingOptions(settingTags), label: 'Tag when opening the board', description: 'Applies to a fresh opening and can be combined with the notebook. Restart Joplin to list newly added tags.' },
+			...(platform === 'mobile' ? {
+				showMobilePanel: { value: true, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Show the JotDrop plugin panel', description: 'Shows the board launcher behind the puzzle button on mobile. Restart Joplin after changing this setting.' },
+			} : {}),
 			editedToTop: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move a note to the top of the board when you edit it', description: 'Ticking a checkbox or setting a reminder on the board leaves the card where it is. Pinned notes stay pinned.' },
 			moveChecked: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move checked items to the bottom', description: 'When you tick a task on the board, it moves below the open tasks in its list. Unticking moves it back up. This changes the order of the lines in the note.' },
 			paperTipClosed: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Paper drawer tip closed' },
@@ -560,7 +612,7 @@ joplin.plugins.register({
 
 		if (platform === 'desktop') {
 			await joplin.views.menuItems.create('jotdropOpenBoardMenu', 'jotdropOpenBoard', MenuItemLocation.View);
-		} else {
+		} else if (await joplin.settings.value('showMobilePanel')) {
 			// On mobile a panel is reachable from every screen through the header's puzzle button.
 			const panel = await joplin.views.panels.create('jotdropLauncher');
 			await joplin.views.panels.setHtml(panel, '<div class="jd-launch"><div class="jd-launch-card"><h1>JotDrop</h1><p>All your notes as cards.</p><button id="jd-open" type="button">Open JotDrop board</button></div></div>');

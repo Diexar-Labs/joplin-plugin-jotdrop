@@ -115,6 +115,11 @@ let reloadTimer = 0;
 let columnsShown = 0;
 let lastData = '';
 let renderToken = 0;
+let appliedOpenRevision = null;
+let rememberTimer = 0;
+let lastRememberAt = 0;
+let viewDirty = false;
+let openingCard = false;
 let searchToken = 0;
 let searchTimer = 0;
 let shown = 0;
@@ -138,6 +143,9 @@ let justTicked;
 const cardPreviews = new Map();
 // `paper` is the open Paper drawer ("paper drawer") or one small drawer ("paper drawer/work"), or ''.
 const state = { cloud: null, cards: [], folders: [], drawers: [], paperTipClosed: false, boardFolder: '', query: '', folderId: '', tag: '', paper: '', archive: false, found: null };
+const desktopBoard = () => document.documentElement.dataset.platform === 'desktop';
+const boardScroller = () => desktopBoard() ? document.getElementById('jotdrop-root') : (document.scrollingElement || document.documentElement);
+const boardViewportBottom = () => desktopBoard() ? boardScroller().getBoundingClientRect().bottom : window.innerHeight;
 
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -257,6 +265,8 @@ async function load() {
     toast(t.failed);
     return;
   }
+  openingCard = false;
+  const freshOpen = !!els && data.freshOpenRevision !== appliedOpenRevision && !data.view;
   if (!els) {
     if (data.scroll && data.scroll.y > 0) {
       restore = data.scroll;
@@ -274,21 +284,29 @@ async function load() {
       if ((data.folders || []).some((f) => f.id === data.view.folderId)) state.folderId = data.view.folderId;
       // A search shows the same cards as before the note: some matched text this new board has not read yet (forum 51337 #46).
       if (state.query.trim() && Array.isArray(data.view.found)) state.found = new Set(data.view.found);
+    } else {
+      state.folderId = data.initialNotebookId || '';
+      state.tag = data.initialTag || '';
     }
     buildShell();
     els.search.value = state.query;
     syncSearchClear();
+  } else if (freshOpen) {
+    Object.assign(state, { query: '', folderId: data.initialNotebookId || '', tag: data.initialTag || '', paper: '', archive: false, found: null });
+    els.search.value = '';
+    syncSearchClear();
   }
+  appliedOpenRevision = data.freshOpenRevision;
   applyTheme();
   state.cloud = data.cloud;
   renderCloudButton(data.cloud);
   // Nothing changed for the board (our own write coming back, a note it does not show): cards stay put.
   const same = JSON.stringify([data.cards, data.folders, data.drawers, data.paperTipClosed, data.boardFolder]);
-  if (same === lastData) return;
+  if (same === lastData && !freshOpen) return;
   lastData = same;
   Object.assign(state, { cards: data.cards, folders: data.folders, drawers: data.drawers || [], paperTipClosed: !!data.paperTipClosed, boardFolder: data.boardFolder });
   if (state.query.trim()) runSearch(true);
-  renderAll(false);
+  renderAll(freshOpen);
 }
 
 async function ensurePreviews(cards) {
@@ -363,6 +381,7 @@ function visibleCards() {
 // Title, tags and fetched text match at once; Joplin's index adds the notes the board has not fetched.
 // `keepPlace` is the same search again (the board came back or reloaded): its cards stay and the board does not move.
 function runSearch(keepPlace = false) {
+  viewDirty = true;
   const token = ++searchToken;
   clearTimeout(searchTimer);
   const text = state.query;
@@ -430,11 +449,14 @@ function buildShell() {
   const more = h('div', { class: 'jd-more', 'aria-hidden': 'true' });
   const toastEl = h('div', { class: 'jd-toast', role: 'status', 'aria-live': 'polite' });
   // The board comes back where it was, so a long board needs a quick way up to the search and filters (forum, 5 Nov).
-  const scroller = document.scrollingElement || document.documentElement;
+  const scroller = boardScroller();
   const toTop = h('button', { type: 'button', class: 'jd-totop', title: t.toTop, 'aria-label': t.toTop,
     onclick: () => scroller.scrollTo({ top: 0 }) }, '↑');
-  const showToTop = () => toTop.classList.toggle('is-shown', scroller.scrollTop > window.innerHeight);
-  window.addEventListener('scroll', showToTop, { passive: true });
+  const showToTop = () => toTop.classList.toggle('is-shown', scroller.scrollTop > scroller.clientHeight);
+  (desktopBoard() ? scroller : window).addEventListener('scroll', () => { showToTop(); scheduleRemember(); }, { passive: true });
+  window.addEventListener('blur', flushRemember);
+  window.addEventListener('pagehide', flushRemember);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushRemember(); });
   els = { search, searchClear, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   narrow = window.matchMedia('(max-width: 599px)');
   narrow.addEventListener('change', renderSearchHint);
@@ -449,7 +471,7 @@ function buildShell() {
   // A turned phone or a resized window changes how many tags fit on the one line.
   let tagsWidth = 0;
   new ResizeObserver(() => { const width = tags.clientWidth; if (width !== tagsWidth) { tagsWidth = width; if (refitTags) refitTags(); } }).observe(tags);
-  new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '800px' }).observe(more);
+  new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { root: desktopBoard() ? scroller : null, rootMargin: '800px' }).observe(more);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
   // The reader's own scrolling ends the hold on the card that was opened.
   for (const type of ['touchstart', 'wheel', 'mousedown', 'keydown']) window.addEventListener(type, releaseCard, { capture: true, passive: true });
@@ -618,6 +640,7 @@ function buildComposer() {
 // ---- render ----
 
 function renderAll(fromTop) {
+  viewDirty = true;
   renderFolders();
   renderTags();
   renderArchiveButton();
@@ -845,7 +868,7 @@ async function renderGrid(fromTop) {
     return;
   }
   if (token !== renderToken) return;
-  const scroller = document.scrollingElement || document.documentElement;
+  const scroller = boardScroller();
   const y = scroller.scrollTop;
   columnsShown = columnCount();
   const box = () => {
@@ -877,6 +900,8 @@ async function renderGrid(fromTop) {
   restore = null;
   revealBoard();
   loadMore();
+  viewDirty = true;
+  scheduleRemember();
 }
 
 // Puts a card at `top` on the screen and keeps it there while the columns still change height. The browser's own scroll
@@ -885,7 +910,7 @@ function holdCard(id, top) {
   releaseCard();
   const card = els.grid.querySelector(`[data-id="${id}"]`);
   if (!card) return;
-  const scroller = document.scrollingElement || document.documentElement;
+  const scroller = boardScroller();
   const settle = () => {
     if (!card.isConnected) return releaseCard();
     scroller.scrollTop += card.getBoundingClientRect().top - top;
@@ -922,7 +947,7 @@ function place(count) {
 
 async function loadMore() {
   if (loadingMore || shown >= order.length) return;
-  if (els.more.getBoundingClientRect().top > window.innerHeight + 800) return;
+  if (els.more.getBoundingClientRect().top > boardViewportBottom() + 800) return;
   loadingMore = true;
   const token = renderToken;
   try {
@@ -1012,14 +1037,62 @@ function cardEl(c) {
 
 // The board remembers where it was, so coming back from the note lands on the same card, with the same search,
 // notebook, tag and archive filters (forum 51337, 20 Nov: they were reset).
-function openCard(id) {
-  const y = (document.scrollingElement || document.documentElement).scrollTop;
-  const card = els.grid.querySelector(`[data-id="${id}"]`);
-  const top = card ? card.getBoundingClientRect().top : 0;
+function currentView() {
   const view = { query: state.query, folderId: state.folderId, tag: state.tag, paper: state.paper, archive: state.archive };
   // The cards a search shows go along, so the board can show the same ones when it comes back (forum 51337 #46).
   if (state.query.trim()) view.found = order.map((c) => c.id);
-  post({ type: 'open', id, y, top, shown, view }).catch(() => toast(t.failed));
+  return view;
+}
+
+function rememberBoardPosition() {
+  if (!els || openingCard) return;
+  const scroller = boardScroller();
+  const viewportTop = desktopBoard() ? scroller.getBoundingClientRect().top : 0;
+  const viewportBottom = boardViewportBottom();
+  let anchor = null;
+  for (const column of els.grid.querySelectorAll('.jd-col')) {
+    let low = 0;
+    let high = column.children.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (column.children[middle].getBoundingClientRect().bottom <= viewportTop) low = middle + 1;
+      else high = middle;
+    }
+    const card = column.children[low];
+    if (!card) continue;
+    const rect = card.getBoundingClientRect();
+    if (rect.top >= viewportBottom) continue;
+    if (!anchor || rect.top < anchor.top) anchor = { id: card.dataset.id, top: rect.top };
+  }
+  const message = { type: 'remember', revision: appliedOpenRevision, at: performance.timeOrigin + performance.now(), id: anchor?.id || '', top: anchor?.top || 0, y: scroller.scrollTop, shown };
+  if (viewDirty) { message.view = currentView(); viewDirty = false; }
+  post(message).catch(() => { if (message.view) viewDirty = true; });
+}
+
+function scheduleRemember() {
+  clearTimeout(rememberTimer);
+  if (performance.now() - lastRememberAt > 150) {
+    lastRememberAt = performance.now();
+    rememberBoardPosition();
+  }
+  rememberTimer = setTimeout(flushRemember, 150);
+}
+
+function flushRemember() {
+  clearTimeout(rememberTimer);
+  rememberTimer = 0;
+  lastRememberAt = performance.now();
+  rememberBoardPosition();
+}
+
+function openCard(id) {
+  clearTimeout(reloadTimer);
+  clearTimeout(rememberTimer);
+  openingCard = true;
+  const y = boardScroller().scrollTop;
+  const card = els.grid.querySelector(`[data-id="${id}"]`);
+  const top = card ? card.getBoundingClientRect().top : 0;
+  post({ type: 'open', at: performance.timeOrigin + performance.now(), id, y, top, shown, view: currentView() }).catch(() => { openingCard = false; toast(t.failed); });
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.
@@ -1420,8 +1493,10 @@ function showDrop(el, after) {
 function autoScroll() {
   if (!drag) return;
   const edge = 70;
-  const scroller = document.scrollingElement || document.documentElement;
-  const push = drag.y < edge ? drag.y - edge : drag.y > window.innerHeight - edge ? drag.y - (window.innerHeight - edge) : 0;
+  const scroller = boardScroller();
+  const top = desktopBoard() ? scroller.getBoundingClientRect().top : 0;
+  const bottom = boardViewportBottom();
+  const push = drag.y < top + edge ? drag.y - (top + edge) : drag.y > bottom - edge ? drag.y - (bottom - edge) : 0;
   if (push) {
     scroller.scrollTop += push / 5;
     aim();
