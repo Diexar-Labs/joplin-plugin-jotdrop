@@ -64,6 +64,8 @@ Then open the board:
 
 The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. On desktop the board opens when Joplin starts from then on; you can turn that off under **Options > JotDrop**. On Android you open it from the puzzle button, so it never lands on top of a note you had just opened; you can switch opening at start on under **Configuration > JotDrop**. To remove the launcher from the mobile plugin panel, turn off **Show the JotDrop plugin panel** there and restart Joplin. Once created, the board note remains available in the JotDrop notebook.
 
+Under **JotDrop** settings, **Notebook when opening the board** and **Tag when opening the board** choose the starting filters. They default to **(All notes)** and **(No tag)**, and can be used together. Opening a card and going back keeps your current filters and search. A deleted notebook or tag falls back to the default. Restart Joplin to see newly created notebooks and tags in the setting lists.
+
 Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins it recommends itself, so JotDrop is not available there.
 
 ## Features

@@ -115,6 +115,7 @@ let reloadTimer = 0;
 let columnsShown = 0;
 let lastData = '';
 let renderToken = 0;
+let appliedOpenRevision = null;
 let searchToken = 0;
 let searchTimer = 0;
 let shown = 0;
@@ -260,6 +261,7 @@ async function load() {
     toast(t.failed);
     return;
   }
+  const freshOpen = !!els && data.freshOpenRevision !== appliedOpenRevision && !data.view;
   if (!els) {
     if (data.scroll && data.scroll.y > 0) {
       restore = data.scroll;
@@ -277,21 +279,29 @@ async function load() {
       if ((data.folders || []).some((f) => f.id === data.view.folderId)) state.folderId = data.view.folderId;
       // A search shows the same cards as before the note: some matched text this new board has not read yet (forum 51337 #46).
       if (state.query.trim() && Array.isArray(data.view.found)) state.found = new Set(data.view.found);
+    } else {
+      state.folderId = data.initialNotebookId || '';
+      state.tag = data.initialTag || '';
     }
     buildShell();
     els.search.value = state.query;
     syncSearchClear();
+  } else if (freshOpen) {
+    Object.assign(state, { query: '', folderId: data.initialNotebookId || '', tag: data.initialTag || '', paper: '', archive: false, found: null });
+    els.search.value = '';
+    syncSearchClear();
   }
+  appliedOpenRevision = data.freshOpenRevision;
   applyTheme();
   state.cloud = data.cloud;
   renderCloudButton(data.cloud);
   // Nothing changed for the board (our own write coming back, a note it does not show): cards stay put.
   const same = JSON.stringify([data.cards, data.folders, data.drawers, data.paperTipClosed, data.boardFolder]);
-  if (same === lastData) return;
+  if (same === lastData && !freshOpen) return;
   lastData = same;
   Object.assign(state, { cards: data.cards, folders: data.folders, drawers: data.drawers || [], paperTipClosed: !!data.paperTipClosed, boardFolder: data.boardFolder });
   if (state.query.trim()) runSearch(true);
-  renderAll(false);
+  renderAll(freshOpen);
 }
 
 async function ensurePreviews(cards) {
