@@ -34,6 +34,7 @@ let platform = 'desktop';
 let boardId: string | null = null;
 // Where the board was when a card was opened, so coming back from the note lands on the same spot.
 let boardScroll: { id: string; top: number; y: number; shown: number } | null = null;
+let boardPositionAt = 0;
 // The search, notebook, tag and archive filters the board had when a card was opened (forum 51337, 20 Nov): they come back with it.
 // With a search, also the cards it showed (forum 51337 #46): some matched text that a new board has not read yet.
 let boardView: { query: string; folderId: string; tag: string; paper: string; archive: boolean; found?: string[] } | null = null;
@@ -420,9 +421,17 @@ async function answer(message: any) {
 	case 'previews': return Promise.all(message.ids.map(preview));
 	case 'search': return searchNotes(message.text);
 	case 'open':
+		if (Number.isFinite(message.at)) boardPositionAt = Math.max(boardPositionAt, Number(message.at));
 		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
 		boardView = cleanView(message.view);
 		await joplin.commands.execute('openNote', message.id);
+		return true;
+	case 'remember':
+		// A board can also be left with Joplin's Back button, without opening a card.
+		if (message.revision !== freshOpenRevision || !Number.isFinite(message.at) || message.at < boardPositionAt) return false;
+		boardPositionAt = Number(message.at);
+		if (Number.isFinite(message.y)) boardScroll = { id: String(message.id || ''), top: Number(message.top) || 0, y: Number(message.y), shown: Number(message.shown) || 0 };
+		if (Object.prototype.hasOwnProperty.call(message, 'view')) boardView = cleanView(message.view);
 		return true;
 	case 'openUrl': await joplin.commands.execute('openItem', message.url); return true;
 	// Joplin opens an attached file the way it does from the note: in the computer's own app for that file.
@@ -533,6 +542,7 @@ async function openBoard(create: boolean) {
 	// Opened on purpose (the puzzle button, the toolbar, startup): a fresh board. Only the way back from a note keeps its filters.
 	boardView = null;
 	boardScroll = null;
+	boardPositionAt = 0;
 	let id = await findBoardNoteId();
 	if (!id) {
 		if (!create) return;

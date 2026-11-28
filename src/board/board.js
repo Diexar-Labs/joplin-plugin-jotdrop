@@ -116,6 +116,10 @@ let columnsShown = 0;
 let lastData = '';
 let renderToken = 0;
 let appliedOpenRevision = null;
+let rememberTimer = 0;
+let lastRememberAt = 0;
+let viewDirty = false;
+let openingCard = false;
 let searchToken = 0;
 let searchTimer = 0;
 let shown = 0;
@@ -261,6 +265,7 @@ async function load() {
     toast(t.failed);
     return;
   }
+  openingCard = false;
   const freshOpen = !!els && data.freshOpenRevision !== appliedOpenRevision && !data.view;
   if (!els) {
     if (data.scroll && data.scroll.y > 0) {
@@ -376,6 +381,7 @@ function visibleCards() {
 // Title, tags and fetched text match at once; Joplin's index adds the notes the board has not fetched.
 // `keepPlace` is the same search again (the board came back or reloaded): its cards stay and the board does not move.
 function runSearch(keepPlace = false) {
+  viewDirty = true;
   const token = ++searchToken;
   clearTimeout(searchTimer);
   const text = state.query;
@@ -447,7 +453,10 @@ function buildShell() {
   const toTop = h('button', { type: 'button', class: 'jd-totop', title: t.toTop, 'aria-label': t.toTop,
     onclick: () => scroller.scrollTo({ top: 0 }) }, '↑');
   const showToTop = () => toTop.classList.toggle('is-shown', scroller.scrollTop > scroller.clientHeight);
-  (desktopBoard() ? scroller : window).addEventListener('scroll', showToTop, { passive: true });
+  (desktopBoard() ? scroller : window).addEventListener('scroll', () => { showToTop(); scheduleRemember(); }, { passive: true });
+  window.addEventListener('blur', flushRemember);
+  window.addEventListener('pagehide', flushRemember);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushRemember(); });
   els = { search, searchClear, folder, archive, cloud, count, tags, grid, more, toast: toastEl };
   narrow = window.matchMedia('(max-width: 599px)');
   narrow.addEventListener('change', renderSearchHint);
@@ -631,6 +640,7 @@ function buildComposer() {
 // ---- render ----
 
 function renderAll(fromTop) {
+  viewDirty = true;
   renderFolders();
   renderTags();
   renderArchiveButton();
@@ -890,6 +900,8 @@ async function renderGrid(fromTop) {
   restore = null;
   revealBoard();
   loadMore();
+  viewDirty = true;
+  scheduleRemember();
 }
 
 // Puts a card at `top` on the screen and keeps it there while the columns still change height. The browser's own scroll
@@ -1025,14 +1037,62 @@ function cardEl(c) {
 
 // The board remembers where it was, so coming back from the note lands on the same card, with the same search,
 // notebook, tag and archive filters (forum 51337, 20 Nov: they were reset).
-function openCard(id) {
-  const y = boardScroller().scrollTop;
-  const card = els.grid.querySelector(`[data-id="${id}"]`);
-  const top = card ? card.getBoundingClientRect().top : 0;
+function currentView() {
   const view = { query: state.query, folderId: state.folderId, tag: state.tag, paper: state.paper, archive: state.archive };
   // The cards a search shows go along, so the board can show the same ones when it comes back (forum 51337 #46).
   if (state.query.trim()) view.found = order.map((c) => c.id);
-  post({ type: 'open', id, y, top, shown, view }).catch(() => toast(t.failed));
+  return view;
+}
+
+function rememberBoardPosition() {
+  if (!els || openingCard) return;
+  const scroller = boardScroller();
+  const viewportTop = desktopBoard() ? scroller.getBoundingClientRect().top : 0;
+  const viewportBottom = boardViewportBottom();
+  let anchor = null;
+  for (const column of els.grid.querySelectorAll('.jd-col')) {
+    let low = 0;
+    let high = column.children.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (column.children[middle].getBoundingClientRect().bottom <= viewportTop) low = middle + 1;
+      else high = middle;
+    }
+    const card = column.children[low];
+    if (!card) continue;
+    const rect = card.getBoundingClientRect();
+    if (rect.top >= viewportBottom) continue;
+    if (!anchor || rect.top < anchor.top) anchor = { id: card.dataset.id, top: rect.top };
+  }
+  const message = { type: 'remember', revision: appliedOpenRevision, at: performance.timeOrigin + performance.now(), id: anchor?.id || '', top: anchor?.top || 0, y: scroller.scrollTop, shown };
+  if (viewDirty) { message.view = currentView(); viewDirty = false; }
+  post(message).catch(() => { if (message.view) viewDirty = true; });
+}
+
+function scheduleRemember() {
+  clearTimeout(rememberTimer);
+  if (performance.now() - lastRememberAt > 150) {
+    lastRememberAt = performance.now();
+    rememberBoardPosition();
+  }
+  rememberTimer = setTimeout(flushRemember, 150);
+}
+
+function flushRemember() {
+  clearTimeout(rememberTimer);
+  rememberTimer = 0;
+  lastRememberAt = performance.now();
+  rememberBoardPosition();
+}
+
+function openCard(id) {
+  clearTimeout(reloadTimer);
+  clearTimeout(rememberTimer);
+  openingCard = true;
+  const y = boardScroller().scrollTop;
+  const card = els.grid.querySelector(`[data-id="${id}"]`);
+  const top = card ? card.getBoundingClientRect().top : 0;
+  post({ type: 'open', at: performance.timeOrigin + performance.now(), id, y, top, shown, view: currentView() }).catch(() => { openingCard = false; toast(t.failed); });
 }
 
 // Only the paper turns a little, never the text (Eric's rule from the website); the same note always gets the same angle.
