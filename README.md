@@ -62,7 +62,7 @@ Then open the board:
 - **Desktop:** click the board button in the editor toolbar, or **View > Open JotDrop board**.
 - **Android:** tap the puzzle button at the top, then **Open JotDrop board**.
 
-The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. On desktop the board opens when Joplin starts from then on; you can turn that off under **Options > JotDrop**. On Android you open it from the puzzle button, so it never lands on top of a note you had just opened; you can switch opening at start on under **Configuration > JotDrop**.
+The first time, JotDrop creates a notebook called **JotDrop** with one note in it. That note is the board. Quick notes go to this notebook too, unless you have filtered the board on another notebook. On desktop the board opens when Joplin starts from then on; you can turn that off under **Options > JotDrop**. On Android you open it from the puzzle button, so it never lands on top of a note you had just opened; you can switch opening at start on under **Configuration > JotDrop**. To remove the launcher from the mobile plugin panel, turn off **Show the JotDrop plugin panel** there and restart Joplin. Once created, the board note remains available in the JotDrop notebook.
 
 Requires Joplin 3.5 or newer. On iPhone and iPad, Joplin only allows the plugins it recommends itself, so JotDrop is not available there.
 

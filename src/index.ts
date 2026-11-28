@@ -523,7 +523,10 @@ joplin.plugins.register({
 		await joplin.settings.registerSection('jotdrop', { label: 'JotDrop', iconName: 'fas fa-th-large' });
 		await joplin.settings.registerSettings({
 			boardNoteId: { value: '', type: SettingItemType.String, section: 'jotdrop', public: false, label: 'Board note' },
-			openAtStartup: { value: platform === 'desktop', type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts', description: 'On Android this is off by default: the board is one tap away behind the puzzle button, and opening it at start could land on top of a note you had just opened.' },
+			openAtStartup: { value: platform === 'desktop', type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Open the JotDrop board when Joplin starts', description: 'On Android this is off by default, since opening the board at start could land on top of a note you had just opened.' },
+			...(platform === 'mobile' ? {
+				showMobilePanel: { value: true, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Show the JotDrop plugin panel', description: 'Shows the board launcher behind the puzzle button on mobile. Restart Joplin after changing this setting.' },
+			} : {}),
 			editedToTop: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move a note to the top of the board when you edit it', description: 'Ticking a checkbox or setting a reminder on the board leaves the card where it is. Pinned notes stay pinned.' },
 			moveChecked: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: true, label: 'Move checked items to the bottom', description: 'When you tick a task on the board, it moves below the open tasks in its list. Unticking moves it back up. This changes the order of the lines in the note.' },
 			paperTipClosed: { value: false, type: SettingItemType.Bool, section: 'jotdrop', public: false, label: 'Paper drawer tip closed' },
@@ -560,7 +563,7 @@ joplin.plugins.register({
 
 		if (platform === 'desktop') {
 			await joplin.views.menuItems.create('jotdropOpenBoardMenu', 'jotdropOpenBoard', MenuItemLocation.View);
-		} else {
+		} else if (await joplin.settings.value('showMobilePanel')) {
 			// On mobile a panel is reachable from every screen through the header's puzzle button.
 			const panel = await joplin.views.panels.create('jotdropLauncher');
 			await joplin.views.panels.setHtml(panel, '<div class="jd-launch"><div class="jd-launch-card"><h1>JotDrop</h1><p>All your notes as cards.</p><button id="jd-open" type="button">Open JotDrop board</button></div></div>');
