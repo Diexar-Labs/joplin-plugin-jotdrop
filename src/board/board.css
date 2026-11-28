@@ -64,8 +64,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* The paper itself. The folded corner is cut off for real, so whatever lies under the card shows there: the page, the shadow,
    another card (#109, mrjo118: a corner painted in the page colour showed as a square edge on anything else). */
 .card-paper::before { content: ""; position: absolute; inset: 0; border: 1px solid var(--line); border-radius: inherit; background: var(--note); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%); }
-/* The flap of the folded corner lies along the cut; past it the corner is open. */
-.card-paper::after { content: ""; position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; border-top-left-radius: 5px; background: linear-gradient(to top left, transparent 50%, color-mix(in oklab, var(--note) 78%, var(--ink)) 50%); }
+/* The flap has short curves only where its diagonal meets the top and left edges; its top-left stays square. */
+.card-paper::after { content: ""; position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; background: color-mix(in oklab, var(--note) 78%, var(--ink)); clip-path: path("M 0 0 H 13 Q 16 0 14 2 L 2 14 Q 0 16 0 13 Z"); }
 /* The dragged card fades and a bar shows where it lands; nothing shifts while dragging. */
 .is-card-dragging, .is-card-dragging * { cursor: grabbing !important; user-select: none; }
 .note-card.is-dragging { opacity: .45; }
